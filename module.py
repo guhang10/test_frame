@@ -93,21 +93,6 @@ class run_script(base.script_base):
 #task_run_script.main()
 
 
-#
-# vcenter_details module: display vcenter details
-#
-class vcenter_details(vmware_base):
-    description = "Getting vcenter details"
-    from pyVim import connect
-    from pyVmomi import vmodl
-    from pyVmomi import vim
-
-    def __init__(self, host, user, pwd):
-        self.host = host
-        self.user = user
-        self.pwd = pwd
-
-
 
 
 
