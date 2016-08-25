@@ -4,6 +4,7 @@
 import base
 import atexit
 import ssl
+import json
 
 from vm_tools import tasks
 from pyVim import connect
@@ -340,6 +341,68 @@ class vmware_reset_vm(base.vmware_base):
 
 
 
+#
+# vmware_soft_reboot_vm module: this module send target vm a  reboot signal(no gurantee for a reboot though)
+#
+
+class vmware_soft_reboot_vm(base.vmware_base):
+    description = "send vm a soft reboot signal"
+
+    def __init__(self, host, user, password, **search):
+        super(vmware_soft_reboot_vm, self).__init__("vmware_soft_reboot_vm", "6.0.0")
+        self.context = ssl.SSLContext(ssl.PROTOCOL_SSLv23)
+        self.context.verify_mode = ssl.CERT_NONE
+        self.host = host
+        self.user = user
+        self.password = password
+        self.search = search
+
+    def main(self):
+
+        try:
+            service_instance = connect.SmartConnect(host=self.host ,user=self.user,
+                    pwd=self.password, port=443, sslContext=self.context)
+
+            atexit.register(connect.Disconnect, service_instance)
+
+            if "uuid" in self.search:
+                VM = service_instance.content.searchIndex.FindByUuid(None, self.search["uuid"],
+                                                                     True, False)
+            elif "ip" in self.search:
+                VM = service_instance.content.searchIndex.FindByIp(None, self.search["ip"], True)
+
+            elif "name" in self.search:
+                VM = service_instance.content.searchIndex.FindByDnsName(None, self.search["name"],
+                                                                        True)
+            else:
+                print "No valid search criteria given"
+                return False
+
+            if VM is None:
+                print "Unable to locate VirtualMachine."
+                return False
+
+            print("Found: {0}".format(VM.name))
+            print("The current powerState is: {0}".format(VM.runtime.powerState))
+            print("Attempting to reset {0}".format(VM.name))
+            TASK = VM.RebootGuest()
+
+        except vmodl.MethodFault as error:
+            print("Caught vmodl fault : " + error.msg)
+            return False
+        
+        print "complete !"
+        return True
+
+
+#
+#  wmare_list_datastore_info module: still haven't decide whether I want json output yet...mmm....
+#
+
+class vmware_list_datastore_info(base.vmware_base):
+    description = "list datastore informations"
+
+    def __init__(self, host, user, password, json):
 
 
 

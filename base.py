@@ -87,9 +87,13 @@ class script_base(base):
             raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), filename)
 
         
+class ssh_base(base):
 
-#create_vm = script_base("create_vm")
-#print create_vm.name
+    def __init__(self, name, version):
+        super(ssh_base, self).__init__(name, version)
+        self.base_type = "ssh"
 
-
+        global module_ssh_id 
+        self.module_ssh_id = module_ssh_id
+        module_ssh_id += 1
 
