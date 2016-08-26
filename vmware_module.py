@@ -5,12 +5,19 @@ import base
 import atexit
 import ssl
 import json
+import meta
 
 from vm_tools import tasks
 from pyVim import connect
 from pyVmomi import vmodl
 from pyVmomi import vim
 
+#
+# Custom exception
+#
+class ERROR_exception(Exception):
+        def __init__(self, message):
+            self.message = message
 
 #
 # vmware_connect_test module
@@ -28,15 +35,26 @@ class vmware_connect_test(base.vmware_base):
         self.password = password
 
     def main(self):
+        
+        return_dict = {}
+
         try:
             service_instance = connect.SmartConnect(host=self.host ,user=self.user,
                     pwd=self.password, port=443, sslContext=self.context)
-            print service_instance
-            return True
 
         except Exception as e:
             print e
-            return False
+            return_dict["success"] = "false"
+            meta_dict = meta.meta_header(self.host, self.user, "oops", ERROR=error.msg)
+            return_dict["meta"] = meta_dict.main()
+            return json.dumps(return_dict)
+
+        return_dict["success"] = "true"
+        meta_dict = meta.meta_header(self.host, self.user, "ok")
+        return_dict["meta"] = meta_dict.main()
+        return json.dumps(return_dict)
+        
+        
 
 
 #
@@ -53,6 +71,7 @@ class vmware_get_vms(base.vmware_base):
         self.host = host
         self.user = user
         self.password = password
+        self.json = json
 
     def print_vm_info(self, virtual_machine):
         """
@@ -85,6 +104,39 @@ class vmware_get_vms(base.vmware_base):
             print("Question  : ", summary.runtime.question.text)
         print("")
 
+    def construct_dict(self, virtual_machine):
+        """
+        construct part of a json string, it's then concatenated to the VMS dictionary
+
+        """
+
+        summary = virtual_machine.summary
+        vm = {}
+        vm["Name"] = summary.config.name
+        vm["Template"] = summary.config.template
+        vm["Path"] = summary.config.vmPathName
+        vm["Guest"] = summary.config.guestFullName
+        vm["Instance UUID"] = summary.config.instanceUuid
+        vm["Bios UUID"] = summary.config.uuid
+
+        if summary.config.annotation:
+            vm["Annotation"] = summary.config.annotation
+
+        vm["State"] = summary.runtime.powerState
+
+        if summary.guest.toolsStatus:
+            vm["VMware-tools"] = summary.guest.toolsStatus
+
+        if summary.guest.ipAddress:
+            vm["IP"] = summary.guest.ipAddress
+        else:
+            vm["IP"] = None
+
+        if summary.runtime.question is not None:
+            vm["Question"] = summary.runtime.question.text
+
+        return vm
+
 
     def main(self):
         try:
@@ -101,15 +153,38 @@ class vmware_get_vms(base.vmware_base):
                     container, viewType, recursive)
 
             children = containerView.view
+
+            return_dict = {}
+            return_dict["result"] = []
+
             for child in children:
-                self.print_vm_info(child)
+
+                if not self.json:
+                    self.print_vm_info(child)
+
+                else:
+                    return_dict["result"].append(self.construct_dict(child))
+
 
         except vmodl.MethodFault as error:
             print("Caught vmodl fault : " + error.msg)
-            return False
-
-        return True
-
+            
+            if self.json:
+                return_dict["success"] = "false"
+                meta_dict = meta.meta_header(self.host, self.user, "oops", ERROR=error.msg)
+                return_dict["meta"] = meta_dict.main() 
+                return json.dumps(return_dict)
+            else:
+                return False
+        
+        if self.json:
+            return_dict["success"] = "true"
+            meta_dict = meta.meta_header(self.host, self.user, "ok")
+            return_dict["meta"] = meta_dict.main()
+            return json.dumps(return_dict)
+        else:
+            return True
+        
 
 #
 # vmware_poweroff_vm module
@@ -118,7 +193,7 @@ class vmware_get_vms(base.vmware_base):
 class vmware_poweroff_vm(base.vmware_base):
     description = "power off a vm"
 
-    def __init__(self, host, user, password, **search):
+    def __init__(self, host, user, password, json, **search):
         super(vmware_poweroff_vm, self).__init__("vmware_poweroff_vm", "6.0.0")
         self.context = ssl.SSLContext(ssl.PROTOCOL_SSLv23)
         self.context.verify_mode = ssl.CERT_NONE
@@ -126,6 +201,7 @@ class vmware_poweroff_vm(base.vmware_base):
         self.user = user
         self.password = password
         self.search = search
+        self.json = json
 
     def main(self):
 
@@ -134,6 +210,8 @@ class vmware_poweroff_vm(base.vmware_base):
                     pwd=self.password, port=443, sslContext=self.context)
 
             atexit.register(connect.Disconnect, service_instance)
+
+            return_dict = {}
 
             if "uuid" in self.search:
                 VM = service_instance.content.searchIndex.FindByUuid(None, self.search["uuid"],
@@ -145,30 +223,53 @@ class vmware_poweroff_vm(base.vmware_base):
                 VM = service_instance.content.searchIndex.FindByDnsName(None, self.search["name"],
                                                                         True)
             else:
-                print "No valid search criteria given"
-                return False
+                raise ERROR_exception("No valid search criteria given")
 
             if VM is None:
-                print "Unable to locate VirtualMachine."
-                return False
+                raise ERROR_exception("Unable to locate VirtualMachine.")
 
-            print("Found: {0}".format(VM.name))
-            print("The current powerState is: {0}".format(VM.runtime.powerState))
-            print("Attempting to power off {0}".format(VM.name))
+            message = []
+
+            message.append("Found: {0}".format(VM.name))
+            message.append("The current powerState is: {0}".format(VM.runtime.powerState))
+            message.append("Attempting to power off {0}".format(VM.name))
+
+            if not self.json:
+                for i in message[0:3]: print i
+
             TASK = VM.PowerOffVM_Task()
             tasks.wait_for_tasks(service_instance, [TASK])
-            print("{0}".format(TASK.info.state))
-            print("The current powerState is: {0}".format(VM.runtime.powerState))
-            
+
+            message.append("{0}".format(TASK.info.state))
+            message.append("The current powerState is: {0}".format(VM.runtime.powerState))
+
+            if not self.json:
+                for i in message[3:5]: print i
+         
         except vmodl.MethodFault as error:
-            print("Caught vmodl fault : " + error.msg)
-            return False
+
+            raise ERROR_exception(error.msg)
+
+        except ERROR_exception as e:
+
+            if self.json:
+                return_dict["success"] = "false"
+                meta_dict = meta.meta_header(self.host, self.user, "oops", ERROR=e.message)
+                return_dict["meta"] = meta_dict.main()
+                return json.dumps(return_dict)
+            else:
+                print e.message
+                return False
+            
+        if self.json:
+            return_dict["success"] = "true"
+            meta_dict = meta.meta_header(self.host, self.user, message)
+            return_dict["meta"] = meta_dict.main()
+            return json.dumps(return_dict)
+        else:
+            return True
         
-        print "complete !"
-        return True
-
-
-
+   
 #
 # vmware_poweron_vm module: this module will not ipaddress as filter, off machines don't have ip field
 #
@@ -176,7 +277,7 @@ class vmware_poweroff_vm(base.vmware_base):
 class vmware_poweron_vm(base.vmware_base):
     description = "power on a vm"
 
-    def __init__(self, host, user, password, **search):
+    def __init__(self, host, user, password, json, **search):
         super(vmware_poweron_vm, self).__init__("vmware_poweron_vm", "6.0.0")
         self.context = ssl.SSLContext(ssl.PROTOCOL_SSLv23)
         self.context.verify_mode = ssl.CERT_NONE
@@ -184,6 +285,7 @@ class vmware_poweron_vm(base.vmware_base):
         self.user = user
         self.password = password
         self.search = search
+        self.json = json
 
     def main(self):
 
@@ -207,21 +309,44 @@ class vmware_poweron_vm(base.vmware_base):
                 print "Unable to locate VirtualMachine."
                 return False
 
-            print("Found: {0}".format(VM.name))
-            print("The current powerState is: {0}".format(VM.runtime.powerState))
-            print("Attempting to power on {0}".format(VM.name))
+            return_dict = {}
+            message = []
+
+            message.append("Found: {0}".format(VM.name))
+            message.append("The current powerState is: {0}".format(VM.runtime.powerState))
+            message.append("Attempting to power on {0}".format(VM.name))
+
+            if not self.json:
+                for i in message[0:3]: print i
+
             TASK = VM.PowerOnVM_Task()
             tasks.wait_for_tasks(service_instance, [TASK])
-            print("{0}".format(TASK.info.state))
-            print("The current powerState is: {0}".format(VM.runtime.powerState))
-            
+
+            message.append("{0}".format(TASK.info.state))
+            message.append("The current powerState is: {0}".format(VM.runtime.powerState))
+
+            if not self.json:
+                for i in message[3:5]: print i
+         
+
         except vmodl.MethodFault as error:
             print("Caught vmodl fault : " + error.msg)
-            return False
-        
-        print "complete !"
-        return True
 
+            if self.json:
+                return_dict["success"] = "false"
+                meta_dict = meta.meta_header(self.host, self.user, message, ERROR=error.msg)
+                return_dict["meta"] = meta_dict.main()
+                return json.dumps(return_dict)
+            else:
+                return False
+
+        if self.json:
+            return_dict["success"] = "true"
+            meta_dict = meta.meta_header(self.host, self.user, message)
+            return_dict["meta"] = meta_dict.main()
+            return json.dumps(return_dict)
+        else:
+            return True
 
 
 #
@@ -231,7 +356,7 @@ class vmware_poweron_vm(base.vmware_base):
 class vmware_delete_vm(base.vmware_base):
     description = "delete a vm"
 
-    def __init__(self, host, user, password, **search):
+    def __init__(self, host, user, password, json, **search):
         super(vmware_delete_vm, self).__init__("vmware_delete_vm", "6.0.0")
         self.context = ssl.SSLContext(ssl.PROTOCOL_SSLv23)
         self.context.verify_mode = ssl.CERT_NONE
@@ -239,6 +364,7 @@ class vmware_delete_vm(base.vmware_base):
         self.user = user
         self.password = password
         self.search = search
+        self.json = json
 
     def main(self):
 
@@ -264,24 +390,58 @@ class vmware_delete_vm(base.vmware_base):
             if VM is None:
                 print "Unable to locate VirtualMachine."
                 return False
+            
+            return_dict = {}
+            message = []
 
-            print("Found: {0}".format(VM.name))
-            print("The current powerState is: {0}".format(VM.runtime.powerState))
-            print("Attempting to power off {0}".format(VM.name))
-            TASK = VM.PowerOffVM_Task()
-            tasks.wait_for_tasks(service_instance, [TASK])
-            print("{0}".format(TASK.info.state))
-            print("Destroying VM from vSphere.")
+            message.append("Found: {0}".format(VM.name))
+            message.append("The current powerState is: {0}".format(VM.runtime.powerState))
+
+            if not self.json:
+                for i in message[0:2]: print i
+
+            if VM.runtime.powerState != "poweredOff":
+                message.append("Attempting to power off {0}".format(VM.name))
+                print message[3]
+
+                TASK = VM.PowerOffVM_Task()
+                tasks.wait_for_tasks(service_instance, [TASK])
+            
+                message.append("{0}".format(TASK.info.state))
+                message.append("The current powerState is: {0}".format(VM.runtime.powerState))
+
+                if not self.json:
+                    for i in message[3:5]: print i
+
+            message.append("Attempting to delete {0}".format(VM.name))
+            print message[-1]
+            
             TASK = VM.Destroy_Task()
             tasks.wait_for_tasks(service_instance, [TASK])
-            print("{0}".format(TASK.info.state))
-
+            
+            message.append("{0}".format(TASK.info.state))
+            if not self.json:
+                print message[-1]
+            
+        
         except vmodl.MethodFault as error:
             print("Caught vmodl fault : " + error.msg)
-            return False
-        
-        print "complete !"
-        return True
+
+            if self.json:
+                return_dict["success"] = "false"
+                meta_dict = meta.meta_header(self.host, self.user, message, ERROR=error.msg)
+                return_dict["meta"] = meta_dict.main()
+                return json.dumps(return_dict)
+            else:
+                return False
+
+        if self.json:
+            return_dict["success"] = "true"
+            meta_dict = meta.meta_header(self.host, self.user, message)
+            return_dict["meta"] = meta_dict.main()
+            return json.dumps(return_dict)
+        else:
+            return True
 
 
 #
@@ -512,7 +672,7 @@ class vmware_list_datastore_info(base.vmware_base):
                 datastores[esxi_host.name] = datastore_dict
 
             if self.json:
-                print(json.dumps(datastores))
+                return json.dumps(datastores)
 
         except vmodl.MethodFault as error:
             print("Caught vmodl fault : " + error.msg)
