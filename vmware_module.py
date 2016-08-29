@@ -551,13 +551,12 @@ class vmware_soft_reboot_vm(base.vmware_base):
                 VM = service_instance.content.searchIndex.FindByDnsName(None, self.search["name"],
                                                                         True)
             else:
-                print "No valid search criteria given"
-                return False
+                raise ERROR_exception("No valid search criteria given")
 
             if VM is None:
-                print "Unable to locate VirtualMachine."
-                return False
+                raise ERROR_exception("Unable to locate VirtualMachine.")
 
+                       
             message.append("Found: {0}".format(VM.name))
             message.append("The current powerState is: {0}".format(VM.runtime.powerState))
             message.append("Attempting to reboot {0}".format(VM.name))
@@ -733,20 +732,129 @@ class vmware_list_datastore_info(base.vmware_base):
 # vmware_clone_vm: this modue is designed to clone an existing vm (how is ip address and uuid resolved?)
 #
 
-#class vmware_clone_vm(base.vmware_base):
+class vmware_clone_vm(base.vmware_base):
+    description = "this modue is designed to clone an existing vm (how is ip address and uuid resolved?)"
 
-#    def __init__(self, host, user, password, json):
+    def __init__(self, host, user, password, vm_name, template, **select):
+        super(vmware_clone_vm, self).__init__("vmware_clone_vm", "6.0.0")
 
-#        def super(vmware_clone_vm, self).__init__("vmware_clone_vm", "6.0.0")
+        self.host = host
+        self.user = user
+        self.password = password
+        self.json = json
+        self.vm_name
+        self.template
+        self.select = select
+
+        elective = ["datacenter_name", "vm_folder", "datastore_name", "cluster_name", "resource_pool",
+                    "power_on"]
+
+        for var in self.select:
+            setattr(self, var, self.select[var])
 
 
+    def get_obj(content, vimtype, name):
+        """
+        Return an object by name, if name is None the
+        first found object is returned
+        """
+        obj = None
+        container = content.viewManager.CreateContainerView(
+            content.rootFolder, vimtype, True)
+        for c in container.view:
+            if name:
+                if c.name == name:
+                    obj = c
+                    break
+            else:
+                obj = c
+                break
+
+        return obj
 
 
+    def clone_vm(
+            content, template, vm_name, si,
+            datacenter_name, vm_folder, datastore_name,
+            cluster_name, resource_pool, power_on):
+        """
+        Clone a VM from a template/VM, datacenter_name, vm_folder, datastore_name
+        cluster_name, resource_pool, and power_on are all optional.
+        """
 
+        # if none git the first one
+        datacenter = get_obj(content, [vim.Datacenter], datacenter_name)
 
+        if vm_folder:
+            destfolder = get_obj(content, [vim.Folder], vm_folder)
+        else:
+            destfolder = datacenter.vmFolder
 
+        if datastore_name:
+            datastore = get_obj(content, [vim.Datastore], datastore_name)
+        else:
+            datastore = get_obj(
+                content, [vim.Datastore], template.datastore[0].info.name)
 
+        # if None, get the first one
+        cluster = get_obj(content, [vim.ClusterComputeResource], cluster_name)
 
+        if resource_pool:
+            resource_pool = get_obj(content, [vim.ResourcePool], resource_pool)
+        else:
+            resource_pool = cluster.resourcePool
+
+        # set relospec
+        relospec = vim.vm.RelocateSpec()
+        relospec.datastore = datastore
+        relospec.pool = resource_pool
+
+        clonespec = vim.vm.CloneSpec()
+        clonespec.location = relospec
+        clonespec.powerOn = power_on
+
+        print "cloning VM..."
+        task = template.Clone(folder=destfolder, name=vm_name, spec=clonespec)
+        wait_for_task(task)
+
+    
+    def main():
+        
+        try:
+            service_instance = connect.SmartConnect(host=self.host ,user=self.user,
+                    pwd=self.password, port=443, sslContext=self.context)
+
+            atexit.register(connect.Disconnect, service_instance)
+
+            content = service_instance.RetrieveContent()
+            # template is not a template, it should be able to be a vm as well, fingers crossed
+            template = get_obj(content, [vim.VirtualMachine], self.template)
+
+            if template:
+                clone_vm(content, template, self.vm_name, service_instance, datacenter_name, vm_folder, 
+                        datacenter_name, cluster_name, resource_pool, power_on)
+            else:
+                raise ERROR_exception("Can't find specified template")
+
+        except (ERROR_exception,vmodl.MethodFault) as e:
+
+            if self.json:
+                return_dict["success"] = "false"
+                meta_dict = meta.meta_header(self.host, self.user, "oops", ERROR=e.msg)
+                return_dict["meta"] = meta_dict.main()
+                return json.dumps(return_dict)
+            else:
+                print e.msg
+                return False
+            
+        if self.json:
+            return_dict["success"] = "true"
+            return_dict["result"] = datastores
+            meta_dict = meta.meta_header(self.host, self.user, message)
+            return_dict["meta"] = meta_dict.main()
+            return json.dumps(return_dict)
+        else:
+            return True
 
 
 
