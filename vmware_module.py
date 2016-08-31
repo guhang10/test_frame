@@ -37,6 +37,7 @@ class vmware_connect_test(base.vmware_base):
     def main(self):
         
         return_dict = {}
+        message = []
 
         try:
             service_instance = connect.SmartConnect(host=self.host ,user=self.user,
@@ -45,7 +46,7 @@ class vmware_connect_test(base.vmware_base):
         except Exception as e:
             print e
             return_dict["success"] = "false"
-            meta_dict = meta.meta_header(self.host, self.user, "oops", ERROR=error.msg)
+            meta_dict = meta.meta_header(self.host, self.user, message, ERROR=error.msg)
             return_dict["meta"] = meta_dict.main()
             return json.dumps(return_dict)
 
@@ -171,7 +172,8 @@ class vmware_get_vms(base.vmware_base):
             
             if self.json:
                 return_dict["success"] = "false"
-                meta_dict = meta.meta_header(self.host, self.user, "oops", ERROR=error.msg)
+                message = "oops"
+                meta_dict = meta.meta_header(self.host, self.user, message, ERROR=error.msg)
                 return_dict["meta"] = meta_dict.main() 
                 return json.dumps(return_dict)
             else:
@@ -252,7 +254,7 @@ class vmware_poweroff_vm(base.vmware_base):
 
             if self.json:
                 return_dict["success"] = "false"
-                meta_dict = meta.meta_header(self.host, self.user, "oops", ERROR=e.msg)
+                meta_dict = meta.meta_header(self.host, self.user, message, ERROR=e.msg)
                 return_dict["meta"] = meta_dict.main()
                 return json.dumps(return_dict)
             else:
@@ -330,7 +332,7 @@ class vmware_poweron_vm(base.vmware_base):
 
             if self.json:
                 return_dict["success"] = "false"
-                meta_dict = meta.meta_header(self.host, self.user, "oops", ERROR=e.msg)
+                meta_dict = meta.meta_header(self.host, self.user, message, ERROR=e.msg)
                 return_dict["meta"] = meta_dict.main()
                 return json.dumps(return_dict)
             else:
@@ -423,7 +425,7 @@ class vmware_delete_vm(base.vmware_base):
 
             if self.json:
                 return_dict["success"] = "false"
-                meta_dict = meta.meta_header(self.host, self.user, "oops", ERROR=e.msg)
+                meta_dict = meta.meta_header(self.host, self.user, message, ERROR=e.msg)
                 return_dict["meta"] = meta_dict.main()
                 return json.dumps(return_dict)
             else:
@@ -497,7 +499,7 @@ class vmware_reset_vm(base.vmware_base):
 
             if self.json:
                 return_dict["success"] = "false"
-                meta_dict = meta.meta_header(self.host, self.user, "oops", ERROR=e.msg)
+                meta_dict = meta.meta_header(self.host, self.user, message, ERROR=e.msg)
                 return_dict["meta"] = meta_dict.main()
                 return json.dumps(return_dict)
             else:
@@ -572,7 +574,7 @@ class vmware_soft_reboot_vm(base.vmware_base):
 
             if self.json:
                 return_dict["success"] = "false"
-                meta_dict = meta.meta_header(self.host, self.user, "oops", ERROR=e.msg)
+                meta_dict = meta.meta_header(self.host, self.user, message, ERROR=e.msg)
                 return_dict["meta"] = meta_dict.main()
                 return json.dumps(return_dict)
             else:
@@ -711,7 +713,7 @@ class vmware_list_datastore_info(base.vmware_base):
 
             if self.json:
                 return_dict["success"] = "false"
-                meta_dict = meta.meta_header(self.host, self.user, "oops", ERROR=e.msg)
+                meta_dict = meta.meta_header(self.host, self.user, message, ERROR=e.msg)
                 return_dict["meta"] = meta_dict.main()
                 return json.dumps(return_dict)
             else:
@@ -735,25 +737,31 @@ class vmware_list_datastore_info(base.vmware_base):
 class vmware_clone_vm(base.vmware_base):
     description = "this modue is designed to clone an existing vm (how is ip address and uuid resolved?)"
 
-    def __init__(self, host, user, password, vm_name, template, **select):
+    def __init__(self, host, user, password, json, vm_name, template, **select):
         super(vmware_clone_vm, self).__init__("vmware_clone_vm", "6.0.0")
-
+       
+        self.context = ssl.SSLContext(ssl.PROTOCOL_SSLv23)
+        self.context.verify_mode = ssl.CERT_NONE
+        
         self.host = host
         self.user = user
         self.password = password
         self.json = json
-        self.vm_name
-        self.template
+        self.vm_name = vm_name
+        self.template = template
         self.select = select
 
         elective = ["datacenter_name", "vm_folder", "datastore_name", "cluster_name", "resource_pool",
                     "power_on"]
 
-        for var in self.select:
-            setattr(self, var, self.select[var])
+        for var in elective:
+            if var in select:
+                setattr(self, var, self.select[var])
+            else:
+                setattr(self, var, None)
 
 
-    def get_obj(content, vimtype, name):
+    def get_obj(self, content, vimtype, name):
         """
         Return an object by name, if name is None the
         first found object is returned
@@ -774,7 +782,7 @@ class vmware_clone_vm(base.vmware_base):
 
 
     def clone_vm(
-            content, template, vm_name, si,
+            self, content, template, vm_name, service_instance,
             datacenter_name, vm_folder, datastore_name,
             cluster_name, resource_pool, power_on):
         """
@@ -783,24 +791,24 @@ class vmware_clone_vm(base.vmware_base):
         """
 
         # if none git the first one
-        datacenter = get_obj(content, [vim.Datacenter], datacenter_name)
+        datacenter = self.get_obj(content, [vim.Datacenter], datacenter_name)
 
         if vm_folder:
-            destfolder = get_obj(content, [vim.Folder], vm_folder)
+            destfolder = self.get_obj(content, [vim.Folder], vm_folder)
         else:
             destfolder = datacenter.vmFolder
 
         if datastore_name:
-            datastore = get_obj(content, [vim.Datastore], datastore_name)
+            datastore = self.get_obj(content, [vim.Datastore], datastore_name)
         else:
-            datastore = get_obj(
+            datastore = self.get_obj(
                 content, [vim.Datastore], template.datastore[0].info.name)
 
         # if None, get the first one
-        cluster = get_obj(content, [vim.ClusterComputeResource], cluster_name)
+        cluster = self.get_obj(content, [vim.ClusterComputeResource], cluster_name)
 
         if resource_pool:
-            resource_pool = get_obj(content, [vim.ResourcePool], resource_pool)
+            resource_pool = self.get_obj(content, [vim.ResourcePool], resource_pool)
         else:
             resource_pool = cluster.resourcePool
 
@@ -814,12 +822,18 @@ class vmware_clone_vm(base.vmware_base):
         clonespec.powerOn = power_on
 
         print "cloning VM..."
-        task = template.Clone(folder=destfolder, name=vm_name, spec=clonespec)
-        wait_for_task(task)
+        message.append("cloning VM...")
+
+        TASK = template.Clone(folder=destfolder, name=vm_name, spec=clonespec)
+
+        tasks.wait_for_tasks(service_instance, [TASK])
 
     
-    def main():
-        
+    def main(self):
+
+        return_dict = {}
+        message = []
+
         try:
             service_instance = connect.SmartConnect(host=self.host ,user=self.user,
                     pwd=self.password, port=443, sslContext=self.context)
@@ -828,11 +842,15 @@ class vmware_clone_vm(base.vmware_base):
 
             content = service_instance.RetrieveContent()
             # template is not a template, it should be able to be a vm as well, fingers crossed
-            template = get_obj(content, [vim.VirtualMachine], self.template)
+            # is this name the dns name or vm name (need to find out)
+            template = self.get_obj(content, [vim.VirtualMachine], self.template)
 
             if template:
-                clone_vm(content, template, self.vm_name, service_instance, datacenter_name, vm_folder, 
-                        datacenter_name, cluster_name, resource_pool, power_on)
+                message.append["Found vm template: " + self.template + " as " + template] 
+                self.clone_vm(content, template, self.vm_name, service_instance, self.datacenter_name,
+                        self.vm_folder, self.datastore_name, self.cluster_name, self.resource_pool,
+                        self.power_on)
+                       
             else:
                 raise ERROR_exception("Can't find specified template")
 
@@ -840,7 +858,7 @@ class vmware_clone_vm(base.vmware_base):
 
             if self.json:
                 return_dict["success"] = "false"
-                meta_dict = meta.meta_header(self.host, self.user, "oops", ERROR=e.msg)
+                meta_dict = meta.meta_header(self.host, self.user, message, ERROR=e.msg)
                 return_dict["meta"] = meta_dict.main()
                 return json.dumps(return_dict)
             else:
