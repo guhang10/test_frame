@@ -732,6 +732,7 @@ class vmware_list_datastore_info(base.vmware_base):
 
 #
 # vmware_clone_vm: this modue is designed to clone an existing vm (how is ip address and uuid resolved?)
+# clone a vm is okay, but not permitted to power it up, duplicated ip maybe, need to modify
 #
 
 class vmware_clone_vm(base.vmware_base):
@@ -812,17 +813,49 @@ class vmware_clone_vm(base.vmware_base):
         else:
             resource_pool = cluster.resourcePool
 
+        # set customspec
+        # guest NIC settings, i.e. "adapter map"
+        adaptermaps=[]
+        guest_map = vim.vm.customization.AdapterMapping()
+        guest_map.adapter = vim.vm.customization.IPSettings()
+        guest_map.adapter.ip = vim.vm.customization.FixedIp()
+        guest_map.adapter.ip.ipAddress = "10.2.26.158"
+        guest_map.adapter.subnetMask = "255.255.255.0"
+        adaptermaps.append(guest_map)
+        
+        # Hostname settings only supports windows and linux bloody hell!
+        ident = vim.vm.customization.LinuxPrep()
+        ident.domain = "statseeker.com"
+        ident.hostName = vim.vm.customization.FixedName()
+        ident.hostName.name = vm_name
+
+        # DNS settings
+        globalip = vim.vm.customization.GlobalIPSettings()
+        globalip.dnsServerList = "10.1.5.2"
+        globalip.dnsSuffixList = "statseeker.com"
+
+        customspec = vim.vm.customization.Specification()
+        customspec.nicSettingMap = adaptermaps
+        customspec.identity = ident
+        customspec.globalIPSettings = globalip
+
         # set relospec
         relospec = vim.vm.RelocateSpec()
         relospec.datastore = datastore
         relospec.pool = resource_pool
 
+        # set clonespec, note custom spec is required to change ip and domain name
         clonespec = vim.vm.CloneSpec()
         clonespec.location = relospec
         clonespec.powerOn = power_on
+        clonespec.template = False
+        #clonespec.config = vmconf
 
+        #customization of freebsd vms are not supported in vmware as for now, power_on stays false
+        #when cloning from vm instead of template
+        #clonespec.customization = customspec 
+        
         print "cloning VM..."
-        message.append("cloning VM...")
 
         TASK = template.Clone(folder=destfolder, name=vm_name, spec=clonespec)
 
@@ -846,7 +879,7 @@ class vmware_clone_vm(base.vmware_base):
             template = self.get_obj(content, [vim.VirtualMachine], self.template)
 
             if template:
-                message.append["Found vm template: " + self.template + " as " + template] 
+                message.append("Found vm template: " + self.template)
                 self.clone_vm(content, template, self.vm_name, service_instance, self.datacenter_name,
                         self.vm_folder, self.datastore_name, self.cluster_name, self.resource_pool,
                         self.power_on)
@@ -867,12 +900,123 @@ class vmware_clone_vm(base.vmware_base):
             
         if self.json:
             return_dict["success"] = "true"
-            return_dict["result"] = datastores
             meta_dict = meta.meta_header(self.host, self.user, message)
             return_dict["meta"] = meta_dict.main()
             return json.dumps(return_dict)
         else:
             return True
+
+
+
+#
+# vmware_create_vm: this module creates a new vm 
+#
+
+class vmware_create_vm(base.vmware_base):
+    description="This module is used to create new vm"
+
+    def __init__(self, host, user, password, json, vm_name, datastore, **settings):
+        super(vmware_create_vm, self).__init__("vmware_create_vm", "6.0.0")
+        self.context = ssl.SSLContext(ssl.PROTOCOL_SSLv23)
+        self.context.verify_mode = ssl.CERT_NONE
+        self.host = host
+        self.user = user
+        self.password = password
+        self.json = json
+        self.vm_name = vm_name
+        self.datastore = datastore
+        self.settings = settings
+
+    def create_dummy_vm(self, param):
+        datastore_path = '[' + datastore +']' + param["vm_name"]
+
+        #minimim VM shells
+        vmx_file = vim.vm.FileInfo(logDirectory=None,
+                               snapshotDirectory=None,
+                               suspendDirectory=None,
+                               vmPathName=datastore_path)
+        
+        config = Vim.vm.ConfigSpec(**param)
+        config = vim.vm.ConfigSpec(name=vm_name, memoryMB=128, numCPUs=1,
+                               files=vmx_file, guestId='dosGuest',
+                               version='vmx-07')
+
+        print "Creating VM {}...".format(vm_name)
+        task = vm_folder.CreateVM_Task(config=config, pool=resource_pool)
+        tasks.wait_for_tasks(service_instance, [task])
+
+
+    def main(self):
+        
+        return_dict = {}
+        message = []
+
+        try:
+            service_instance = connect.SmartConnect(host=self.host ,user=self.user,
+                    pwd=self.password, port=443, sslContext=self.context)
+
+            atexit.register(connect.Disconnect, service_instance)
+
+            content = service_instance.RetrieveContent()
+
+            datacenter = content.rootFolder.childEntity[0]
+            vm_folder = datacenter.vmFolder
+            hosts = datacenter.hostFolder.childEntity
+            resource_pool = hosts[0].resourcePool
+
+
+            # define datastore file path
+            datastore_path = '[' + self.datastore +']' + self.vm_name
+
+            #creating parameter dictionary
+            param = {}
+            param["name"] = self.vm_name
+            param["files"] = vim.vm.FileInfo(logDirectory=None,
+                                 snapshotDirectory=None,
+                                 suspendDirectory=None,
+                                 vmPathName=datastore_path)
+            
+            # default setting
+            param["memoryMB"] = 1024
+            param["numCPUs"] = 1
+            param["guestId"] = "freebsd64Guest"
+            param["version"] = "vmx-07"
+            
+            # overwrite and append to default setting by "self.settings"
+            for setting in self.settings:
+                param[setting] = self.settings[setting]
+            
+            # Set config spec
+            config = vim.vm.ConfigSpec(**param)
+
+            # print "Creating VM {}...".format(vm_name)
+            task = vm_folder.CreateVM_Task(config=config, pool=resource_pool)
+            tasks.wait_for_tasks(service_instance, [task])
+
+            # use some of the params as a returned result, excluding files though
+            del param["files"]
+            return_dict["result"] = param
+        
+        except (ERROR_exception,vmodl.MethodFault) as e:
+
+            if self.json:
+                return_dict["success"] = "false"
+                meta_dict = meta.meta_header(self.host, self.user, message, ERROR=e.msg)
+                return_dict["meta"] = meta_dict.main()
+                return json.dumps(return_dict)
+            else:
+                print e.msg
+                return False
+            
+        if self.json:
+            return_dict["success"] = "true"
+            meta_dict = meta.meta_header(self.host, self.user, message)
+            return_dict["meta"] = meta_dict.main()
+            return json.dumps(return_dict)
+        else:
+            return True
+
+
 
 
 
