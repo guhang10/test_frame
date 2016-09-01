@@ -6,6 +6,7 @@ import atexit
 import ssl
 import json
 import meta
+import time
 
 from vm_tools import tasks
 from pyVim import connect
@@ -989,7 +990,11 @@ class vmware_create_vm(base.vmware_base):
             # Set config spec
             config = vim.vm.ConfigSpec(**param)
 
-            # print "Creating VM {}...".format(vm_name)
+            message.append("Creating VM {}...".format(self.vm_name))
+
+            if not self.json:
+                print message[0]
+
             task = vm_folder.CreateVM_Task(config=config, pool=resource_pool)
             tasks.wait_for_tasks(service_instance, [task])
 
@@ -997,6 +1002,169 @@ class vmware_create_vm(base.vmware_base):
             del param["files"]
             return_dict["result"] = param
         
+        except (ERROR_exception,vmodl.MethodFault) as e:
+
+            if self.json:
+                return_dict["success"] = "false"
+                meta_dict = meta.meta_header(self.host, self.user, message, ERROR=e.msg)
+                return_dict["meta"] = meta_dict.main()
+                return json.dumps(return_dict)
+            else:
+                print e.msg
+                return False
+            
+        if self.json:
+            return_dict["success"] = "true"
+            meta_dict = meta.meta_header(self.host, self.user, message)
+            return_dict["meta"] = meta_dict.main()
+            return json.dumps(return_dict)
+        else:
+            return True
+
+
+
+#
+# vmware_add_disk: this module add a hard disk to a vm, if the vm does not have a 
+# logic controller, the module will add one automatically
+#
+
+class vmware_add_disk(base.vmware_base):
+    description = "This module is designed to add hard disks to existing vms"
+
+    def __init__(self, host, user, password, json, vm_name, disk_type, disk_size, **select):
+        super(vmware_add_disk, self).__init__("vmware_clone_vm", "6.0.0")
+       
+        self.context = ssl.SSLContext(ssl.PROTOCOL_SSLv23)
+        self.context.verify_mode = ssl.CERT_NONE
+        
+        self.host = host
+        self.user = user
+        self.password = password
+        self.json = json
+        self.vm_name = vm_name
+        self.disk_type = disk_type
+        self.disk_size = disk_size
+        self.select = select
+
+    def get_obj(self, content, vimtype, name):
+        """
+        Return an object by name, if name is None the
+        first found object is returned
+        """
+        obj = None
+        container = content.viewManager.CreateContainerView(
+            content.rootFolder, vimtype, True)
+        for c in container.view:
+            if name:
+                if c.name == name:
+                    obj = c
+                    break
+            else:
+                obj = c
+                break
+
+        return obj
+
+    # adding a controller
+    def add_controller(self, vm, service_instance):
+        task = vm.ReconfigVM_Task(
+            spec=vim.vm.ConfigSpec(
+                deviceChange=[
+                    vim.vm.device.VirtualDeviceSpec(
+                        operation=vim.vm.device.VirtualDeviceSpec.Operation.add,
+                        device=vim.vm.device.VirtualLsiLogicSASController(
+                            sharedBus=vim.vm.device.VirtualSCSIController.Sharing.noSharing
+                        ),
+                    )
+                ]
+            )
+        )
+
+        tasks.wait_for_tasks(service_instance, [task])
+        return "Added SCS logic controller to vm"
+
+
+    # checking disk and controller
+    def device_check(self, vm):
+        unit_number = 0
+        controller = None
+        # get all disks on a VM, set unit_number to the next available
+        for dev in vm.config.hardware.device:
+            if hasattr(dev.backing, 'fileName'):
+                unit_number = int(dev.unitNumber) + 1
+                # unit_number 7 reserved for scsi controller
+                if unit_number == 7:
+                    unit_number += 1
+                if unit_number >= 16:
+                    raise ERROR_exception("Does not support more devices")
+            # checking existing controller
+            if isinstance(dev, vim.vm.device.VirtualSCSIController):
+                controller = dev
+        return {"unit_number": unit_number, "controller": controller}
+
+    
+    # adding a disk, if there is no controller, add a controller first 
+    def add_disk(self, vm, service_instance, disk_size, disk_type):
+        return_message = []
+        
+        check = self.device_check(vm)
+        controller = check["controller"]
+        unit_number = check["unit_number"]
+
+        while not (controller and isinstance(unit_number , int)):
+         # add controller here
+            return_message.append(self.add_controller(vm, service_instance))
+            check = self.device_check(vm)
+            controller = check["controller"]
+            unit_number = check["unit_number"]
+
+        spec = vim.vm.ConfigSpec()
+        dev_changes = []
+        new_disk_kb = int(disk_size) * 1024 * 1024
+        disk_spec = vim.vm.device.VirtualDeviceSpec()
+        disk_spec.fileOperation = "create"
+        disk_spec.operation = vim.vm.device.VirtualDeviceSpec.Operation.add
+        disk_spec.device = vim.vm.device.VirtualDisk()
+        disk_spec.device.backing = \
+            vim.vm.device.VirtualDisk.FlatVer2BackingInfo()
+        if disk_type == 'thin':
+            disk_spec.device.backing.thinProvisioned = True
+        disk_spec.device.backing.diskMode = 'persistent'
+        disk_spec.device.unitNumber = unit_number
+        disk_spec.device.capacityInKB = new_disk_kb
+        disk_spec.device.controllerKey = controller.key
+        dev_changes.append(disk_spec)
+        spec.deviceChange = dev_changes
+
+        task = vm.ReconfigVM_Task(spec=spec)
+        tasks.wait_for_tasks(service_instance, [task])
+
+        return_message.append("%sGB disk added to %s" % (disk_size, vm.config.name))
+        return return_message
+        
+    def main(self):
+
+        return_dict = {}
+        message = []
+
+        try:
+            service_instance = connect.SmartConnect(host=self.host ,user=self.user,
+                    pwd=self.password, port=443, sslContext=self.context)
+
+            atexit.register(connect.Disconnect, service_instance)
+
+            content = service_instance.RetrieveContent()
+            # template is not a template, it should be able to be a vm as well, fingers crossed
+            # is this name the dns name or vm name (need to find out)
+            vm = self.get_obj(content, [vim.VirtualMachine], self.vm_name)
+
+            if vm:
+                message.append("Found vm: " + self.vm_name)
+                message.append(self.add_disk(vm, service_instance, self.disk_size, self.disk_type))
+
+            else:
+                raise ERROR_exception("Can't find specified vm")
+
         except (ERROR_exception,vmodl.MethodFault) as e:
 
             if self.json:
