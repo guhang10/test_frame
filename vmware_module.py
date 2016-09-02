@@ -928,25 +928,6 @@ class vmware_create_vm(base.vmware_base):
         self.datastore = datastore
         self.settings = settings
 
-    def create_dummy_vm(self, param):
-        datastore_path = '[' + datastore +']' + param["vm_name"]
-
-        #minimim VM shells
-        vmx_file = vim.vm.FileInfo(logDirectory=None,
-                               snapshotDirectory=None,
-                               suspendDirectory=None,
-                               vmPathName=datastore_path)
-        
-        config = Vim.vm.ConfigSpec(**param)
-        config = vim.vm.ConfigSpec(name=vm_name, memoryMB=128, numCPUs=1,
-                               files=vmx_file, guestId='dosGuest',
-                               version='vmx-07')
-
-        print "Creating VM {}...".format(vm_name)
-        task = vm_folder.CreateVM_Task(config=config, pool=resource_pool)
-        tasks.wait_for_tasks(service_instance, [task])
-
-
     def main(self):
         
         return_dict = {}
@@ -1032,7 +1013,7 @@ class vmware_add_disk(base.vmware_base):
     description = "This module is designed to add hard disks to existing vms"
 
     def __init__(self, host, user, password, json, vm_name, disk_type, disk_size, **select):
-        super(vmware_add_disk, self).__init__("vmware_clone_vm", "6.0.0")
+        super(vmware_add_disk, self).__init__("vmware_add_disk", "6.0.0")
        
         self.context = ssl.SSLContext(ssl.PROTOCOL_SSLv23)
         self.context.verify_mode = ssl.CERT_NONE
@@ -1140,6 +1121,7 @@ class vmware_add_disk(base.vmware_base):
         tasks.wait_for_tasks(service_instance, [task])
 
         return_message.append("%sGB disk added to %s" % (disk_size, vm.config.name))
+        #return_message.append(str(task.info))
         return return_message
         
     def main(self):
@@ -1185,7 +1167,359 @@ class vmware_add_disk(base.vmware_base):
             return True
 
 
+#
+# vmware_add_nic: this module add a network card to an existing vm, nic type should be configurable
+# the net work adapter name need to increment every time a new network adapter is added 
+# this is because multiple network may be added for ha installation
+#
+
+class vmware_add_nic(base.vmware_base):
+    description = "This module is designed to add nic to existing vms"
+
+    def __init__(self, host, user, password, json, vm_name, network, **select):
+        super(vmware_add_nic, self).__init__("vmware_add_disk", "6.0.0")
+       
+        self.context = ssl.SSLContext(ssl.PROTOCOL_SSLv23)
+        self.context.verify_mode = ssl.CERT_NONE
+        
+        self.host = host
+        self.user = user
+        self.password = password
+        self.json = json
+        self.vm_name = vm_name
+        self.network = network
+        self.select = select
+
+    def get_obj(self, content, vimtype, name):
+        """
+        Return an object by name, if name is None the
+        first found object is returned
+        """
+        obj = None
+        container = content.viewManager.CreateContainerView(
+            content.rootFolder, vimtype, True)
+        for c in container.view:
+            if name:
+                if c.name == name:
+                    obj = c
+                    break
+            else:
+                obj = c
+                break
+
+        return obj
 
 
+    # checking disk and controller
+    def device_check(self, vm):
+        unit_number = 0
+        # get all devices on a VM, set unit_number to the next available
+        for dev in vm.config.hardware.device:
+            if hasattr(dev.backing, 'fileName'):
+                unit_number = int(dev.unitNumber) + 1
+                # unit_number 7 reserved for scsi controller
+                if unit_number == 7:
+                    unit_number += 1
+                if unit_number >= 16:
+                    raise ERROR_exception("Does not support more devices")
+        return unit_number
+
+    
+    # adding a network card
+    def add_nic(self, vm, service_instance, network):
+        return_message = []
+
+        unit_number = self.device_check(vm)
+
+        spec = vim.vm.ConfigSpec()
+        nic_changes = []
+
+        nic_spec = vim.vm.device.VirtualDeviceSpec()
+        nic_spec.operation = vim.vm.device.VirtualDeviceSpec.Operation.add
+
+
+        nic_spec.device = vim.vm.device.VirtualE1000()
+        nic_spec.device.key = 4009
+
+        nic_spec.device.deviceInfo = vim.Description()
+        #nic_spec.device.deviceInfo.label = 'Network adapter 10'
+        #nic_spec.device.deviceInfo.summary = 'network'
+
+        nic_spec.device.backing = vim.vm.device.VirtualEthernetCard.NetworkBackingInfo()
+        nic_spec.device.backing.useAutoDetect = False
+
+        # retrieve the content here again is a lazy solution, come back to fix later
+        content = service_instance.RetrieveContent()
+        nic_spec.device.backing.network = self.get_obj(content, [vim.Network], network)
+        nic_spec.device.backing.deviceName = network
+
+        nic_spec.device.connectable = vim.vm.device.VirtualDevice.ConnectInfo()
+        nic_spec.device.connectable.startConnected = True
+        nic_spec.device.connectable.allowGuestControl = True
+        nic_spec.device.connectable.connected = False
+        nic_spec.device.connectable.status = 'untried'
+        nic_spec.device.controllerKey = 100
+        nic_spec.device.wakeOnLanEnabled = True
+        nic_spec.device.addressType = 'assigned'
+
+
+        nic_changes.append(nic_spec)
+
+        spec.deviceChange = nic_changes
+
+        task = vm.ReconfigVM_Task(spec=spec)
+        tasks.wait_for_tasks(service_instance, [task])
+
+        #return_message.append(str(task.info))
+        return_message.append("added network interface card to: " + network)
+        return return_message
+                        
+    def main(self):
+
+        return_dict = {}
+        message = []
+
+        try:
+            service_instance = connect.SmartConnect(host=self.host ,user=self.user,
+                    pwd=self.password, port=443, sslContext=self.context)
+
+            atexit.register(connect.Disconnect, service_instance)
+
+            content = service_instance.RetrieveContent()
+            # template is not a template, it should be able to be a vm as well, fingers crossed
+            # is this name the dns name or vm name (need to find out)
+            vm = self.get_obj(content, [vim.VirtualMachine], self.vm_name)
+
+            if vm:
+                message.append("Found vm: " + self.vm_name)
+                message.append(self.add_nic(vm, service_instance, self.network))
+
+            else:
+                raise ERROR_exception("Can't find specified vm")
+
+        except (ERROR_exception,vmodl.MethodFault) as e:
+
+            if self.json:
+                return_dict["success"] = "false"
+                meta_dict = meta.meta_header(self.host, self.user, message, ERROR=e.msg)
+                return_dict["meta"] = meta_dict.main()
+                return json.dumps(return_dict)
+            else:
+                print e.msg
+                return False
+            
+        if self.json:
+            return_dict["success"] = "true"
+            meta_dict = meta.meta_header(self.host, self.user, message)
+            return_dict["meta"] = meta_dict.main()
+            return json.dumps(return_dict)
+        else:
+            return True
+
+
+#
+# vmware_add_cdrom: this module attach a cdrom to a vm
+#
+class vmware_add_cdrom(base.vmware_base):
+    description = "This module is used to configure a cdrom (install, delete and connect)"
+
+    def __init__(self, host, user, pwd, json, vm_name, cdrom_name, **elective):
+        super(vmware_add_cdrom, self).__init__("vmware_add_cdrom", "6.0.0")
+        self.context = ssl.SSLContext(ssl.PROTOCOL_SSLv23)
+        self.context.verify_mode = ssl.CERT_NONE
+
+        self.host = host
+        self.user = user
+        self.password = pwd
+        self.json = json
+        self.vm_name = vm_name
+        self.cdrom_name = cdrom_name
+        self.elective = elective
+        
+        self.physical = None
+        self.iso = None
+
+        for item in self.elective:
+            setattr(self, item, self.elective[item])
+
+    # this get_obj is only used to search for vm here, might need to merge some of the 
+    # functions a little bit later
+    def get_obj(self, content, vimtype, name):
+            """
+            Return an object by name, if name is None the
+            first found object is returned
+            """
+            obj = None
+            container = content.viewManager.CreateContainerView(
+                content.rootFolder, vimtype, True)
+            for c in container.view:
+                if name:
+                    if c.name == name:
+                        obj = c
+                        break
+                else:
+                    obj = c
+                    break
+
+            return obj
+
+
+    # get datacenter, we will need in the future
+    def get_dc(self, si, name):
+        for dc in si.content.rootFolder.childEntity:
+            if dc.name == name:
+                return dc
+        raise Exception('Failed to find datacenter named %s' % name)
+
+    # return the first physical cdrom if any
+    def get_physical_cdrom(self, host):
+        for lun in host.configManager.storageSystem.storageDeviceInfo.scsiLun:
+            if lun.lunType == 'cdrom':
+                return lun
+        return None
+    
+    # find_free_ide_controller(vm): if none is find, we need to create one
+    def find_free_ide_controller(self, vm):
+        for dev in vm.config.hardware.device:
+            if isinstance(dev, vim.vm.device.VirtualIDEController):
+                # If there are less than 2 devices attached, we can use it.
+                if len(dev.device) < 2:
+                    return dev
+        return None
+
+    # find devices (of a certain type) that belong to a vm
+    def find_device(self, vm, device_type):
+        result = []
+        for dev in vm.config.hardware.device:
+            if isinstance(dev, device_type):
+                result.append(dev)
+        return result
+
+    # define the new cdrom spec
+    def new_cdrom_spec(self, controller_key, backing):
+        connectable = vim.vm.device.VirtualDevice.ConnectInfo()
+        connectable.allowGuestControl = True
+        connectable.startConnected = True
+
+        cdrom = vim.vm.device.VirtualCdrom()
+        cdrom.controllerKey = controller_key
+        cdrom.key = -1
+        cdrom.connectable = connectable
+        cdrom.backing = backing
+        return cdrom
+
+ 
+    def main(self):
+
+        return_dict = {}
+        message = []
+
+        try:
+            service_instance = connect.SmartConnect(host=self.host ,user=self.user,
+                    pwd=self.password, port=443, sslContext=self.context)
+
+            atexit.register(connect.Disconnect, service_instance)
+
+            content = service_instance.RetrieveContent()
+
+            # finding the vm by name using get_obj, no datacenter specified
+            vm = self.get_obj(content, [vim.VirtualMachine], self.vm_name)
+
+            if vm:
+                message.append("Found vm: " + self.vm_name)
+            else:
+                raise ERROR_exception("Can't find specified vm")
+
+
+            
+           # if self.datacenter:
+           #     dc = get_dc(si, .datacenter)
+           # else:
+           #     dc = si.content.rootFolder.childEntity[0]
+
+
+            controller = self.find_free_ide_controller(vm)
+            #print controller
+            if controller is None:
+                raise ERROR_exception('Failed to find a free slot on the IDE controller')
+
+            cdrom = None # want to add a new one
+            
+            # if we want the cdrom to be linked to a physical device
+            if self.physical:
+                cdrom_lun = get_physical_cdrom(vm.runtime.host)
+                if cdrom_lun is not None:
+                    backing = vim.vm.device.VirtualCdrom.AtapiBackingInfo()
+                    backing.deviceName = cdrom_lun.deviceName
+                    deviceSpec = vim.vm.device.VirtualDeviceSpec()
+                    deviceSpec.device = self.new_cdrom_spec(controller.key, backing)
+                    deviceSpec.operation = vim.vm.device.VirtualDeviceSpec.Operation.add
+                    configSpec = vim.vm.ConfigSpec(deviceChange=[deviceSpec])
+                    WaitForTask(vm.Reconfigure(configSpec))
+
+                    cdroms = find_device(vm, vim.vm.device.VirtualCdrom)
+                    cdrom = filter(lambda x: type(x.backing) == type(backing) and
+                                   x.backing.deviceName == cdrom_lun.deviceName,
+                                   cdroms)[0]
+                else:
+                    message.append('Skipping physical CD-Rom test as no device present.')
+                    if not self.json:
+                        print message[-1]
+
+
+            # if we want to connect the cdrom to a iso image
+            if self.iso is not None:
+                op = vim.vm.device.VirtualDeviceSpec.Operation
+                deviceSpec = vim.vm.device.VirtualDeviceSpec()
+                if cdrom is None:  # add a cdrom
+                    backing = vim.vm.device.VirtualCdrom.IsoBackingInfo(fileName=self.iso)
+                    cdrom = self.new_cdrom_spec(controller.key, backing)
+                    deviceSpec.operation = op.add
+                else:  # edit an existing cdrom
+                    backing = vim.vm.device.VirtualCdrom.IsoBackingInfo(fileName=self.iso)
+                    cdrom.backing = backing
+                    deviceSpec.operation = op.edit
+                deviceSpec.device = cdrom
+                configSpec = vim.vm.ConfigSpec(deviceChange=[deviceSpec])
+                task = vm.Reconfigure(configSpec)
+                tasks.wait_for_tasks(service_instance, [task])
+
+                cdroms = self.find_device(vm, vim.vm.device.VirtualCdrom)
+                cdrom = filter(lambda x: type(x.backing) == type(backing) and
+                               x.backing.fileName == self.iso, cdroms)[0]
+                message.append("added cdrom: " + cdrom.deviceInfo.label)
+
+            else:
+                message.append('Skipping ISO test as no iso provided.')
+                if not self.json:
+                    print message[-1]
+
+            #if cdrom is not None:  # Remove it
+            #    deviceSpec = vim.vm.device.VirtualDeviceSpec()
+            #    deviceSpec.device = cdrom
+            #    deviceSpec.operation = op.remove
+            #    configSpec = vim.vm.ConfigSpec(deviceChange=[deviceSpec])
+            #    task = vm.Reconfigure(configSpec)
+            #    tasks.wait_for_tasks(service_instance, [task])
+
+
+        except (ERROR_exception,vmodl.MethodFault) as e:
+
+            if self.json:
+                return_dict["success"] = "false"
+                meta_dict = meta.meta_header(self.host, self.user, message, ERROR=e.msg)
+                return_dict["meta"] = meta_dict.main()
+                return json.dumps(return_dict)
+            else:
+                print e.msg
+                return False
+            
+        if self.json:
+            return_dict["success"] = "true"
+            meta_dict = meta.meta_header(self.host, self.user, message)
+            return_dict["meta"] = meta_dict.main()
+            return json.dumps(return_dict)
+        else:
+            return True
 
 
