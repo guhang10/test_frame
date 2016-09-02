@@ -288,6 +288,26 @@ class vmware_poweron_vm(base.vmware_base):
         self.search = search
         self.json = json
 
+    def get_obj(self, content, vimtype, name):
+        """
+        Return an object by name, if name is None the
+        first found object is returned
+        """
+        obj = None
+        container = content.viewManager.CreateContainerView(
+            content.rootFolder, vimtype, True)
+        for c in container.view:
+            if name:
+                if c.name == name:
+                    obj = c
+                    break
+            else:
+                obj = c
+                break
+
+        return obj
+
+
     def main(self):
 
         try:
@@ -302,9 +322,13 @@ class vmware_poweron_vm(base.vmware_base):
             if "uuid" in self.search:
                 VM = service_instance.content.searchIndex.FindByUuid(None, self.search["uuid"],
                                                                      True, False)
-            elif "name" in self.search:
-                VM = service_instance.content.searchIndex.FindByDnsName(None, self.search["name"],
+            elif "domain_name" in self.search:
+                VM = service_instance.content.searchIndex.FindByDnsName(None, self.search["domain_name"],
                                                                         True)
+            elif "name" in self.search:
+                content = service_instance.RetrieveContent()
+                VM = self.get_obj(content, [vim.VirtualMachine], self.search["name"])
+
             else:
                 raise ERROR_exception("No valid search criteria given")
 
