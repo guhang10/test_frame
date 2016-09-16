@@ -7,8 +7,11 @@ import ssl
 import json
 import meta
 import time
-
+import requests
+import warnings
 from vm_tools import tasks
+import subprocess
+
 from pyVim import connect
 from pyVmomi import vmodl
 from pyVmomi import vim
@@ -16,6 +19,7 @@ from pyVmomi import vim
 #
 # Custom exception
 #
+
 class ERROR_exception(Exception):
         def __init__(self, msg):
             self.msg = msg
@@ -47,13 +51,15 @@ class vmware_connect_test(base.vmware_base):
         except Exception as e:
             print e
             return_dict["success"] = "false"
-            meta_dict = meta.meta_header(self.host, self.user, message, ERROR=error.msg)
+            meta_dict = meta.meta_header(host=self.host, user=self.user, ERROR=error.msg)
+            return_dict["message"] = message
             return_dict["meta"] = meta_dict.main()
             return json.dumps(return_dict)
 
         return_dict["success"] = "true"
-        meta_dict = meta.meta_header(self.host, self.user, "ok")
+        meta_dict = meta.meta_header(host=self.host, user=self.user)
         return_dict["meta"] = meta_dict.main()
+        return_dict["message"] = message
         return json.dumps(return_dict)
         
 
@@ -139,6 +145,8 @@ class vmware_get_vms(base.vmware_base):
 
 
     def main(self):
+        message = []
+        return_dict = {}
         try:
             service_instance = connect.SmartConnect(host=self.host ,user=self.user,
                     pwd=self.password, port=443, sslContext=self.context)
@@ -154,7 +162,6 @@ class vmware_get_vms(base.vmware_base):
 
             children = containerView.view
 
-            return_dict = {}
             return_dict["result"] = []
 
             for child in children:
@@ -172,16 +179,18 @@ class vmware_get_vms(base.vmware_base):
             if self.json:
                 return_dict["success"] = "false"
                 message = "oops"
-                meta_dict = meta.meta_header(self.host, self.user, message, ERROR=error.msg)
+                meta_dict = meta.meta_header(host=self.host, user=self.user, ERROR=error.msg)
                 return_dict["meta"] = meta_dict.main() 
+                return_dict["message"] = message
                 return json.dumps(return_dict)
             else:
                 return False
         
         if self.json:
             return_dict["success"] = "true"
-            meta_dict = meta.meta_header(self.host, self.user, "ok")
+            meta_dict = meta.meta_header(host=self.host, user=self.user)
             return_dict["meta"] = meta_dict.main()
+            return_dict["message"] = message
             return json.dumps(return_dict)
         else:
             return True
@@ -277,8 +286,9 @@ class vmware_poweroff_vm(base.vmware_base):
 
             if self.json:
                 return_dict["success"] = "false"
-                meta_dict = meta.meta_header(self.host, self.user, message, ERROR=e.msg)
+                meta_dict = meta.meta_header(host=self.host, user=self.user, ERROR=e.msg)
                 return_dict["meta"] = meta_dict.main()
+                return_dict["message"] = message
                 return json.dumps(return_dict)
             else:
                 print e.msg
@@ -288,6 +298,7 @@ class vmware_poweroff_vm(base.vmware_base):
             return_dict["success"] = "true"
             meta_dict = meta.meta_header(self.host, self.user, message)
             return_dict["meta"] = meta_dict.main()
+            return_dict["message"] = message
             return json.dumps(return_dict)
         else:
             return True
@@ -379,8 +390,9 @@ class vmware_poweron_vm(base.vmware_base):
 
             if self.json:
                 return_dict["success"] = "false"
-                meta_dict = meta.meta_header(self.host, self.user, message, ERROR=e.msg)
+                meta_dict = meta.meta_header(host=self.host, user=self.user, ERROR=e.msg)
                 return_dict["meta"] = meta_dict.main()
+                return_dict["message"] = message
                 return json.dumps(return_dict)
             else:
                 print e.msg
@@ -388,8 +400,9 @@ class vmware_poweron_vm(base.vmware_base):
             
         if self.json:
             return_dict["success"] = "true"
-            meta_dict = meta.meta_header(self.host, self.user, message)
+            meta_dict = meta.meta_header(host=self.host, user=self.user)
             return_dict["meta"] = meta_dict.main()
+            return_dict["message"] = message
             return json.dumps(return_dict)
         else:
             return True
@@ -496,8 +509,9 @@ class vmware_delete_vm(base.vmware_base):
 
             if self.json:
                 return_dict["success"] = "false"
-                meta_dict = meta.meta_header(self.host, self.user, message, ERROR=e.msg)
+                meta_dict = meta.meta_header(host=self.host, user=self.user, ERROR=e.msg)
                 return_dict["meta"] = meta_dict.main()
+                return_dict["message"] = message
                 return json.dumps(return_dict)
             else:
                 print e.msg
@@ -505,8 +519,9 @@ class vmware_delete_vm(base.vmware_base):
             
         if self.json:
             return_dict["success"] = "true"
-            meta_dict = meta.meta_header(self.host, self.user, message)
+            meta_dict = meta.meta_header(host=self.host, user=self.user)
             return_dict["meta"] = meta_dict.main()
+            return_dict["message"] = message
             return json.dumps(return_dict)
         else:
             return True
@@ -594,8 +609,9 @@ class vmware_reset_vm(base.vmware_base):
 
             if self.json:
                 return_dict["success"] = "false"
-                meta_dict = meta.meta_header(self.host, self.user, message, ERROR=e.msg)
+                meta_dict = meta.meta_header(host=self.host, user=self.user, ERROR=e.msg)
                 return_dict["meta"] = meta_dict.main()
+                return_dict["message"] = message
                 return json.dumps(return_dict)
             else:
                 print e.msg
@@ -603,8 +619,9 @@ class vmware_reset_vm(base.vmware_base):
             
         if self.json:
             return_dict["success"] = "true"
-            meta_dict = meta.meta_header(self.host, self.user, message)
+            meta_dict = meta.meta_header(host=self.host, user=self.user)
             return_dict["meta"] = meta_dict.main()
+            return_dict["message"] = message
             return json.dumps(return_dict)
         else:
             return True
@@ -693,8 +710,9 @@ class vmware_soft_reboot_vm(base.vmware_base):
 
             if self.json:
                 return_dict["success"] = "false"
-                meta_dict = meta.meta_header(self.host, self.user, message, ERROR=e.msg)
+                meta_dict = meta.meta_header(host=self.host, user=self.user, ERROR=e.msg)
                 return_dict["meta"] = meta_dict.main()
+                return_dict["message"] = message
                 return json.dumps(return_dict)
             else:
                 print e.msg
@@ -702,8 +720,9 @@ class vmware_soft_reboot_vm(base.vmware_base):
             
         if self.json:
             return_dict["success"] = "true"
-            meta_dict = meta.meta_header(self.host, self.user, message)
+            meta_dict = meta.meta_header(host=self.host, user=self.user)
             return_dict["meta"] = meta_dict.main()
+            return_dict["message"] = message
             return json.dumps(return_dict)
         else:
             return True
@@ -832,8 +851,9 @@ class vmware_list_datastore_info(base.vmware_base):
 
             if self.json:
                 return_dict["success"] = "false"
-                meta_dict = meta.meta_header(self.host, self.user, message, ERROR=e.msg)
+                meta_dict = meta.meta_header(host=self.host, user=self.user, ERROR=e.msg)
                 return_dict["meta"] = meta_dict.main()
+                return_dict["message"] = message
                 return json.dumps(return_dict)
             else:
                 print e.msg
@@ -842,15 +862,16 @@ class vmware_list_datastore_info(base.vmware_base):
         if self.json:
             return_dict["success"] = "true"
             return_dict["result"] = datastores
-            meta_dict = meta.meta_header(self.host, self.user, message)
+            meta_dict = meta.meta_header(host=self.host, user=self.user)
             return_dict["meta"] = meta_dict.main()
+            return_dict["message"] = message
             return json.dumps(return_dict)
         else:
             return True
 
 
 #
-# vmware_clone_vm: this modue is designed to clone an existing vm (how is ip address and uuid resolved?)
+# vmware_clone_vm: this modue is designed to clone an existing vm (how is ip address and uuid resolved? DHCP)
 # clone a vm is okay, but not permitted to power it up, duplicated ip maybe, need to modify
 #
 
@@ -1010,8 +1031,9 @@ class vmware_clone_vm(base.vmware_base):
 
             if self.json:
                 return_dict["success"] = "false"
-                meta_dict = meta.meta_header(self.host, self.user, message, ERROR=e.msg)
+                meta_dict = meta.meta_header(host=self.host, user=self.user, ERROR=e.msg)
                 return_dict["meta"] = meta_dict.main()
+                return_dect["message"] = message
                 return json.dumps(return_dict)
             else:
                 print e.msg
@@ -1019,8 +1041,9 @@ class vmware_clone_vm(base.vmware_base):
             
         if self.json:
             return_dict["success"] = "true"
-            meta_dict = meta.meta_header(self.host, self.user, message)
+            meta_dict = meta.meta_header(host=self.host, user=self.user)
             return_dict["meta"] = meta_dict.main()
+            return_dect["message"] = message
             return json.dumps(return_dict)
         else:
             return True
@@ -1105,8 +1128,9 @@ class vmware_create_vm(base.vmware_base):
 
             if self.json:
                 return_dict["success"] = "false"
-                meta_dict = meta.meta_header(self.host, self.user, message, ERROR=e.msg)
+                meta_dict = meta.meta_header(host=self.host, user=self.user, ERROR=e.msg)
                 return_dict["meta"] = meta_dict.main()
+                return_dict["message"] = message
                 return json.dumps(return_dict)
             else:
                 print e.msg
@@ -1114,8 +1138,9 @@ class vmware_create_vm(base.vmware_base):
             
         if self.json:
             return_dict["success"] = "true"
-            meta_dict = meta.meta_header(self.host, self.user, message)
+            meta_dict = meta.meta_header(host=self.host, user=self.user)
             return_dict["meta"] = meta_dict.main()
+            return_dict["message"] = message
             return json.dumps(return_dict)
         else:
             return True
@@ -1269,8 +1294,9 @@ class vmware_add_disk(base.vmware_base):
 
             if self.json:
                 return_dict["success"] = "false"
-                meta_dict = meta.meta_header(self.host, self.user, message, ERROR=e.msg)
+                meta_dict = meta.meta_header(host=self.host, user=self.user, ERROR=e.msg)
                 return_dict["meta"] = meta_dict.main()
+                return_dict["message"] = message
                 return json.dumps(return_dict)
             else:
                 print e.msg
@@ -1278,8 +1304,9 @@ class vmware_add_disk(base.vmware_base):
             
         if self.json:
             return_dict["success"] = "true"
-            meta_dict = meta.meta_header(self.host, self.user, message)
+            meta_dict = meta.meta_header(host=self.host, user=self.user)
             return_dict["meta"] = meta_dict.main()
+            return_dict["message"] = message
             return json.dumps(return_dict)
         else:
             return True
@@ -1419,8 +1446,9 @@ class vmware_add_nic(base.vmware_base):
 
             if self.json:
                 return_dict["success"] = "false"
-                meta_dict = meta.meta_header(self.host, self.user, message, ERROR=e.msg)
+                meta_dict = meta.meta_header(host=self.host, user=self.user, ERROR=e.msg)
                 return_dict["meta"] = meta_dict.main()
+                return_dict["message"] = message
                 return json.dumps(return_dict)
             else:
                 print e.msg
@@ -1428,8 +1456,9 @@ class vmware_add_nic(base.vmware_base):
             
         if self.json:
             return_dict["success"] = "true"
-            meta_dict = meta.meta_header(self.host, self.user, message)
+            meta_dict = meta.meta_header(host=self.host, user=self.user)
             return_dict["meta"] = meta_dict.main()
+            return_dict["message"] = message
             return json.dumps(return_dict)
         else:
             return True
@@ -1625,8 +1654,9 @@ class vmware_add_cdrom(base.vmware_base):
 
             if self.json:
                 return_dict["success"] = "false"
-                meta_dict = meta.meta_header(self.host, self.user, message, ERROR=e.msg)
+                meta_dict = meta.meta_header(host=self.host, user=self.user, ERROR=e.msg)
                 return_dict["meta"] = meta_dict.main()
+                return_dict["message"] = message
                 return json.dumps(return_dict)
             else:
                 print e.msg
@@ -1634,8 +1664,137 @@ class vmware_add_cdrom(base.vmware_base):
             
         if self.json:
             return_dict["success"] = "true"
-            meta_dict = meta.meta_header(self.host, self.user, message)
+            meta_dict = meta.meta_header(host=self.host, user=self.user)
             return_dict["meta"] = meta_dict.main()
+            return_dict["message"] = message
+            return json.dumps(return_dict)
+        else:
+            return True
+
+
+
+#
+# vmware_datastore_upload
+#
+
+class vmware_datastore_upload(base.vmware_base):
+    description = "upload file to datastore"
+
+    def __init__(self, host, user, password, json, local_file, datastore, remote_file):
+        super(vmware_datastore_upload, self).__init__("vmware_datastore_upload", "6.0.0")
+        self.context = ssl.SSLContext(ssl.PROTOCOL_SSLv23)
+        self.context.verify_mode = ssl.CERT_NONE
+        self.host = host
+        self.user = user
+        self.password = password
+        self.json = json
+        self.local_file = local_file
+        self.datastore = datastore
+        self.remote_file = remote_file
+
+    
+    def main(self):
+
+        try:
+            service_instance = connect.SmartConnect(host=self.host ,user=self.user,
+                    pwd=self.password, port=443, sslContext=self.context)
+
+            atexit.register(connect.Disconnect, service_instance)
+
+            message = []
+            return_dict = {}
+
+            if not service_instance:
+                print("could not connect ot the host with given credentials")
+                return False
+
+            content = service_instance.RetrieveContent()
+            session_manager = content.sessionManager
+
+            # Get the list of all datacenters we have available to us
+            datacenters_object_view = content.viewManager.CreateContainerView(
+                content.rootFolder,
+                [vim.Datacenter],
+                True)
+
+            # Find the datastore and datacenter we are using
+            datacenter = None
+            datastore = None
+            for dc in datacenters_object_view.view:
+                datastores_object_view = content.viewManager.CreateContainerView(
+                    dc,
+                    [vim.Datastore],
+                    True)
+                for ds in datastores_object_view.view:
+                    if ds.info.name == self.datastore:
+                        datacenter = dc
+                        datastore = ds
+            if not datacenter or not datastore:
+                print("Could not find the datastore specified")
+                raise SystemExit(-1)
+            # Clean up the views now that we have what we need
+            datastores_object_view.Destroy()
+            datacenters_object_view.Destroy()
+
+            # Build the url to put the file - https://hostname:port/resource?params
+            if not self.remote_file.startswith("/"):
+                remote_file = "/" + self.remote_file
+            else:
+                remote_file = self.remote_file
+            resource = "/folder" + remote_file
+            params = {"dsName": datastore.info.name,
+                      "dcPath": datacenter.name}
+            http_url = "https://" + self.host + ":443" + resource
+
+            # Get the cookie built from the current session
+            client_cookie = service_instance._stub.cookie
+            # Break apart the cookie into it's component parts - This is more than
+            # is needed, but a good example of how to break apart the cookie
+            # anyways. The verbosity makes it clear what is happening.
+            cookie_name = client_cookie.split("=", 1)[0]
+            cookie_value = client_cookie.split("=", 1)[1].split(";", 1)[0]
+            cookie_path = client_cookie.split("=", 1)[1].split(";", 1)[1].split(
+                ";", 1)[0].lstrip()
+            cookie_text = " " + cookie_value + "; $" + cookie_path
+            # Make a cookie
+            cookie = dict()
+            cookie[cookie_name] = cookie_text
+
+            # Get the request headers set up
+            headers = {'Content-Type': 'application/octet-stream'}
+
+            # Get the file to upload ready, extra protection by using with against
+            # leaving open threads
+            with open(self.local_file, "rb") as f:
+                # Connect and upload the file
+                
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
+ 
+                    request = requests.put(http_url,
+                                           params=params,
+                                           data=f,
+                                           headers=headers,
+                                           cookies=cookie,
+                                           verify=False)
+            
+        except (ERROR_exception,vmodl.MethodFault) as e:
+
+            if self.json:
+                return_dict["success"] = "false"
+                meta_dict = meta.meta_header(host=self.host, user=self.user, ERROR=e.msg)
+                return_dict["meta"] = meta_dict.main()
+                return_dict["message"] = message
+                return json.dumps(return_dict)
+            else:
+                print e.msg
+                return False
+            
+        if self.json:
+            return_dict["success"] = "true"
+            meta_dict = meta.meta_header(host=self.host, user=self.user)
+            return_dict["meta"] = meta_dict.main()
+            return_dict["message"] = message
             return json.dumps(return_dict)
         else:
             return True

@@ -1,0 +1,1874 @@
+#!/bin/sh
+
+#
+# Copyright (C) 2015  Statseeker Holdings Pty Ltd  ACN 103 346 514
+# All Rights Reserved
+# CONFIDENTIAL - UNAUTHORISED USE PROHIBITED
+#
+
+#
+# This is the main cdrom install script. It is called by rc.local on startup.
+# If this script succeeds, rc.local will eject the cdrom and reboot the machine.
+# If this script fails for any reason, rc.local will launch a debugger showing
+# all output from this script AND all 'bsdinstall' scripts.
+#
+# Debugging info should ONLY be displayed in the case of system or coding errors.
+# If the script exits through 'abort', no debugging information will be displayed.
+#
+
+BSDINSTALL_TMPETC="/tmp/bsdinstall_etc"
+
+
+abort ()
+{
+   echo "Installation failed - contact Statseeker support"
+   echo "Type 'alt+F2' to view log messages."
+   echo "Type 'shutdown -p now' to power down"
+   echo "Statseeker install aborted. Type 'shutdown -p now' to power down." >> ${logfile}
+   # You Shell Not Pass
+   exit 1;
+}
+
+
+checkversion ()
+{
+   # Decode the version allready installed on the disc and the new version to be installed
+   DISCVERSION=$(echo $1 | awk -F'[^0-9]' '{for (i = 1; i <= NF; i = i + 1) {print $i}}')
+   NEWVERSION=$(echo $2 | awk -F'[^0-9]' '{for (i = 1; i <= NF; i = i + 1) {print $i}}')
+   ERRORMSG="A newer version of Statseeker already exists on this machine ($1 > $2)"
+
+   # Check that currently installed version has valid format
+   if [ $(echo $DISCVERSION | wc -w) -lt 3 ]; then
+      echo "Invalid version installed on disc."
+      abort
+   fi
+
+   # Check that version being installed has valid format
+   if [ $(echo $NEWVERSION | wc -w) -lt 3 ]; then
+      echo "Invalid version of Statseeker being installed."
+      abort
+   fi
+
+   # Check that installed version isn't newer than the version being installed
+   set -- $DISCVERSION
+   for NEW in $NEWVERSION
+   do
+      [ -z "$1" ] && CUR=0 || CUR=$1
+      [ $NEW -gt $CUR ] && return 0
+      [ $NEW -lt $CUR ] && { echo $ERRORMSG; abort; }
+      shift
+   done
+
+   while ! [ -z "$1" ]
+   do
+      [ $1 -gt 0 ] && { echo $ERRORMSG; abort; }
+      shift
+   done
+
+   # Versions are equal
+   return 0
+}
+
+
+checklicence ()
+{
+   # This is an upgrade (Only check license if version is less than 3.8.0)
+   DISKVERSION=$(echo $1 | awk -F'[^0-9]' '{for (i = 1; i <= NF; i = i + 1) {print $i}}')
+   # Decode the version of Statseeker that is already installed on this disk
+   set -- $DISKVERSION
+
+   MAJOR_VERSION=$1
+   MINOR_VERSION=$2
+
+   if [ \( $MAJOR_VERSION -eq 3 \) -a \( $MINOR_VERSION -le 7 \) ]; then
+      if [ -f "/mnt/home/statseeker/.licence" ]; then
+         eval `stat -s /mnt/statseeker/.licence`
+         LIC_MTIME=$st_mtime
+         eval `stat -s /mnt/statseeker/nim/etc/discover/maxoid`
+         DISCOVER_MTIME=$st_mtime
+
+         # Check if last discovery is later than when the licence was installed.
+         if [ $DISCOVER_MTIME -gt $LIC_MTIME ]; then
+            dialog --yesno "                       WARNING\n\nA discovery has run after the installation of the license\nfor 3.8. This may mean due to license restrictions,\npolling may be disabled for devices and interfaces after\ncompleting this upgrade.\n\n\nDo you want to continue?" 13 61
+            if [ $? -ne 0 ]; then
+               abort
+            fi
+         fi
+      else
+         echo "FATAL: Upgrading without a license is not permitted"
+         abort
+      fi
+   fi
+}
+
+
+checkhyperthreading ()
+{
+   sysctl -a | grep -q hyperthreading || return 0
+
+   message='
+                      HARDWARE / ENVIRONMENT
+
+   Detected this machine has hyper-threading enabled. This will
+   have a negative impact on system performance. Please disable
+   hyper-threading in your BIOS settings before installing
+   Statseeker.'
+
+   dialog --title "Aborting Statseeker install" --ok-label "Reboot" --msgbox "${message}" 12 70
+   reboot
+   exit 0
+}
+
+
+ha_show_diagram ()
+{
+   local step="$1"
+   local title='' message='' diagram=''
+   local reset='' bold='' red=''
+   local vip='' vhid='' pass=''
+   local mint=''  mip=''  mmask=''
+   local rmint='' rmip='' rmmask=''
+   local role='' rrole=''
+   local dint=''  dip=''  dmask=''
+   local rdint='' rdip='' rdmask=''
+
+   # Text Styles
+   reset=$(echo '\Zn')
+   bold=$( echo '\Zb')
+   red=$(  echo '\Z1')
+
+   # Init Vars
+   vip=${VIRTUAL_IP:-Unknown}
+   vhid=${VHID:-Unknown}
+   vhid="${bold}Virtual Host$reset $vhid"
+   pass=${CARP_PASS:-Unknown}
+   mint=${MAIN_INT:-Unknown}
+   mip=${MAIN_IP:-Unknown}
+   mmask=${MAIN_MASK:-Unknown}
+   rmint=${REMOTE_MAIN_INT:-Unknown}
+   rmip=${REMOTE_MAIN_IP:-Unknown}
+   rmmask=${REMOTE_MAIN_MASK:-Unknown}
+   role="(${HA_ROLE:-Unknown})"
+   rrole="(${REMOTE_HA_ROLE:-Unknown})"
+   dint=${DATA_INT:-Unknown}
+   dip=${DATA_IP:-Unknown}
+   dmask=${DATA_MASK:-Unknown}
+   rdint=${REMOTE_DATA_INT:-Unknown}
+   rdip=${REMOTE_DATA_IP:-Unknown}
+   rdmask=${REMOTE_DATA_MASK:-Unknown}
+
+   # Add Padding (reset+3 bold+3 red+3)
+   vhid=` echo $vhid  | awk '{printf "%37s",  $0}'` # 31 + bold + reset
+   mint=` echo $mint  | awk '{printf "%12s",  $0}'`
+   mip=`  echo $mip   | awk '{printf "%-15s", $0}'`
+   mmask=`echo $mmask | awk '{printf "%-15s", $0}'`
+   rmint=`echo $rmint | awk '{printf "%12s",  $0}'`
+   role=` echo $role  | awk '{printf "%8s",   $0}'`
+   rrole=`echo $rrole | awk '{printf "%9s",   $0}'`
+   dint=` echo $dint  | awk '{printf "%12s",  $0}'`
+   dip=`  echo $dip   | awk '{printf "%-15s", $0}'`
+   dmask=`echo $dmask | awk '{printf "%-15s", $0}'`
+   rdint=`echo $rdint | awk '{printf "%12s",  $0}'`
+
+   # Add Colors
+   case "$step" in
+   dint)
+      dint="$red$dint$reset"
+      message="                 HA Step 1: Select ${red}Data Link Interface$reset                  "
+      ;;
+   rdip)
+      rdip="$red$rdip$reset"
+      message="        HA Step 2: Enter ${red}Remote Server Data Link IP Address$reset             "
+      ;;
+   dip)
+      dip="$red$dip$reset"
+      dmask="$red$dmask$reset"
+      message="               HA Step 3: Configure ${red}Data Link IP Address and Netmask$reset    "
+      ;;
+   mint)
+      mint="$red$mint$reset"
+      message="                    HA Step 4: Select ${red}Main Interface$reset                    "
+      ;;
+   mip)
+      mip="$red$mip$reset"
+      mmask="$red$mmask$reset"
+      message="                 HA Step 5: Configure ${red}Main IP Address and Netmask$reset       "
+      ;;
+   vip)
+      vip="$red$vip$reset"
+      message="                HA Step 6: Configure ${red}Virtual IP Address$reset                 "
+      ;;
+   vhost)
+      vhid=${VHID:-Unknown}
+      vhid="${bold}Virtual Host$reset $red$vhid$reset"
+      vhid=` echo $vhid  | awk '{printf "%43s",  $0}'` # 31 + bold + reset + red + reset
+      pass="$red$pass$reset"
+      message="                HA Step 7: Configure ${red}Virtual Host ID and Secret$reset         "
+      ;;
+   esac
+
+   diagram="$message
+
+$vhid | ${bold}IP$reset $vip
+                                | ${bold}Secret$reset $pass
+              +-----------------+-----------------+
+              |                                   |
+     ${bold}Main Int$reset | ${bold}IP$reset $mip       ${bold}Main Int$reset | ${bold}IP$reset $rmip
+ $mint | ${bold}Mask$reset $mmask $rmint | ${bold}Mask$reset $rmmask
+    +---------+---------+               +---------+---------+
+    |                   |               |                   |
+    |   ${bold}Local Server$reset    |               |   ${bold}Remote Server$reset   |
+    |     $role      |               |     $rrole     |
+    |                   |               |                   |
+    +---------+---------+               +---------+---------+
+     ${bold}Data Int$reset | ${bold}IP$reset $dip       ${bold}Data Int$reset | ${bold}IP$reset $rdip
+ $dint | ${bold}Mask$reset $dmask $rdint | ${bold}Mask$reset $rdmask
+              |                                   |
+              +-----------Data-Sync-Link----------+"
+
+   dialog --no-shadow --no-collapse --colors --msgbox "$diagram" 23 76
+}
+
+
+ha_request_ip ()
+{
+   local title='' msg='' result='' status=0
+
+   case "$1" in
+      virtual)
+         title="Enter Virtual IP Address"
+         msg="This IP Address will be used to access the Statseeker NIM Console."
+         ;;
+      data)
+         title="Enter Data Link IP Address of Remote Server"
+         msg="Enter the IP Address of the \Z1Remote\Zn Server's \Z1Data\Zn Link Interface."
+         ;;
+   esac
+
+   result=$(dialog --stdout --colors --max-input 15 --backtitle "High Availability Configuration" --title "$title" --form "$msg" 0 0 0 'IP Address' 1 0 "$2" 1 20 16 0)
+
+   status=$?
+   if [ $status -ne 0 ]; then
+      return $status
+   fi
+
+   echo "$result"
+   return 0
+}
+
+
+ha_validate_ip ()
+{
+   local valid=''
+   local regex="(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)"
+
+   echo "$1" | egrep -q "^${regex}\.${regex}\.${regex}\.${regex}$"
+
+   if [ $? -ne 0 ]; then
+      dialog --backtitle "High Availability Configuration" --title "Invalid IP Address" --msgbox "The provided IP Address ($1) is invalid. Please enter a valid IP Address." 8 70
+      return 1
+   fi
+
+   return 0
+}
+
+
+ha_get_interfaces ()
+{
+   local ints='' intlen=0
+
+   for interface in `ifconfig -l`
+   do
+      test "$interface" = "lo0" && continue
+      (ifconfig -g wlan | egrep -wq $interface) && continue
+
+      ints="$ints $interface"
+
+      intlen=$(($intlen+1))
+   done
+
+   echo "$ints"
+
+   return $intlen
+}
+
+
+ha_request_interface ()
+{
+   local title='' msg='' list='' listlen=0 desc='' result='' status=0
+
+   case "$1" in
+      main)
+         title="Select Main Interface"
+         msg="Press 'Space' to select the \Z1Main\Zn Interface for this Server."
+         ;;
+      data)
+         title="Select Interface for Data Link with Remote Server"
+         msg="Press 'Space' to select the Interface to use for establishing a \Z1Data\Zn Link with the Remote Server."
+         ;;
+   esac
+
+   for interface in $2
+   do
+      # Get Desc
+      desc=`sysctl -n dev.$(echo $interface | sed -E 's/([[:alpha:]]*)([[:digit:]]*)/\1.\2/g').%desc`
+      # If Wireless adjust Desc
+      ifconfig $interface | grep -q 'media: IEEE 802.11 Wireless' && echo $desc | grep -iqv wireless && desc="Wireless $desc"
+
+      list="$list $interface \"$desc\" off"
+      listlen=$(($listlen+1))
+   done
+
+   list=$(echo "$list" | sed 's/^ *//; s/ *$//; s/ off/ on/')
+
+   result=$(echo $list | xargs dialog --colors --stdout --backtitle "High Availability Configuration" --title "$title" --radiolist "$msg" $((8+$listlen)) 70 $listlen)
+
+   status=$?
+   if [ $status -ne 0 ]; then
+      return $status
+   fi
+
+   echo "$result"
+   return 0
+}
+
+
+ha_request_vhost ()
+{
+   local title='' msg='' result='' status=0
+
+   title="Enter Virtual Host Settings"
+   msg="The Shared Secret will be used to initialise a connection with the Remote Server.\nThe Virtual Host ID must be a number from 1 to 254."
+
+   result=$(dialog --stdout --backtitle "High Availability Configuration" --title "$title" --form "$msg" 0 0 0 'Shared Secret' 1 0 "$1" 1 20 20 0 'Virtual Host ID' 2 0 "$2" 2 20 20 0)
+
+   status=$?
+   if [ $status -ne 0 ]; then
+      return $status
+   fi
+
+   echo "$result"
+   return 0
+}
+
+
+ha_info ()
+{
+   dialog --backtitle "High Availability Configuration" --infobox "$1" 3 70
+   #dialog --backtitle "High Availability Configuration" --pause "$1" 15 70 5
+}
+
+
+# Determine
+check_auto_install ()
+{
+	if [ -f /etc/auto_install_config ] && [ -s /etc/auto_install_config ]; then
+		return 1
+	else
+		return 0
+	fi
+}
+
+return_answer ()
+{
+	return $1
+}
+
+#
+# Set variables for install
+#
+
+# Set variables for auto_install
+check_auto_install
+AUTO_INSTALL=$?
+
+if [ $AUTO_INSTALL -eq 1 ]; then
+	IFS="="
+	while read -r name value
+	do
+		eval $name=\$value
+	done < /etc/auto_install_config
+	IFS=$' \t\n'
+fi
+
+# Statseeker root directory
+ROOT_DIR=/usr/local/statseeker
+
+#
+# HA INSTALL
+#
+USE_HA=0
+HA_CFG="/home/ha/etc/HA.cfg"
+TMP_HA_CFG="/tmp/HA.cfg"
+SSHD_CFG="/etc/ssh/sshd_config"
+SSH_CFG="/etc/ssh/ssh_config"
+SSH_KEY="/home/system/ssh/id_rsa"
+TMP_SSH_KEY="/tmp/id_rsa"
+SSH_AUTH="/home/system/ssh/authorized_keys"
+TMP_SSH_AUTH="/tmp/authorized_keys"
+HAST_EXTENT_SIZE=$((128*1024*1024))
+
+# Set HA Defaults
+HA_ROLE=""
+HWID=""
+MAIN_INT=""
+MAIN_IP=""
+MAIN_MASK=""
+DATA_INT=""
+DATA_IP=""
+DATA_MASK=""
+VIRTUAL_IP=""
+CARP_PASS="statseekersecret"
+VHID="1"
+REMOTE_DATA_IP=""
+REMOTE_HWID=""
+DEFAULT_GATEWAY=""
+HOST_NAME=""
+HOST_NAME_SHORT=""
+DOMAIN=""
+DNS_1=""
+DNS_2=""
+HAST_EXTENT_SIZE=$((128*1024*1024))
+
+# Statseeker package directory
+pkg_dir=/usr/local/statseeker/packages
+
+# Location of log file to record advanced output and errors
+logfile='/tmp/bsdinstall_log'
+echo "Starting Statseeker Installation" >> ${logfile}
+exec 2>>${logfile}
+
+# Configuration files to keep from previous Statseeker installs
+# Make sure directories are included first
+keep_conf='/etc
+/etc/rc.conf
+/etc/ntp.conf
+/etc/resolv.conf
+/etc/hosts
+/boot
+/boot/loader.conf
+/home/statseeker/.ssh
+/home/statseeker/.ssh/id_rsa
+/home/statseeker/.ssh/id_rsa.pub
+/home/system/ssh
+/home/system/ssh/authorized_keys
+/home/system/ssh/id_rsa
+/home/system/ssh/id_rsa.pub'
+
+old_fstab='/etc/fstab'
+
+# Temporary directory to save $keep_conf files
+ss_tmp='/tmp/ss_configuration'
+
+# Statseeker version file
+ssfile="/home/statseeker/.ssversion"
+
+
+#
+# Give users a warning if hyperthreading is enabled
+#
+checkhyperthreading
+
+
+#
+# Display a message to the user
+#
+message='
+                      HARDWARE / ENVIRONMENT
+
+Network Connection:
+ Connect the server to a network segment with a single physical
+ or virtual router (eg. HSRP).
+
+It is not recommended to install on a SAN, RAID 5 or RAID 6
+drive.
+
+RAID 5 & 6 are designed for low volume file/print servers, not
+for high volume database applications. The read/write performance
+of parity RAID is up to 15 times slower than a single disk or a
+stripe/mirror RAID setup. As the Statseeker databases grow in
+size, data loss WILL occur in a RAID 5 & 6 setup.'
+
+if [ $AUTO_INSTALL -ne 1 ]; then
+	dialog --title "Welcome to Statseeker" \
+	       --yes-label "Continue Install" \
+	       --no-label "Reboot" \
+	       --yesno "${message}" 20 70
+else
+	return_answer 0
+fi
+
+if [ $? -ne 0 ]; then
+   reboot
+   exit 0
+fi
+
+has_hast=0
+if [ $USE_HA -eq 1 ]; then
+   #
+   # High Availability STorage Disclaimer
+   #
+   message="
+This Statseeker installation is configured to run in High
+Availability mode.
+
+This requires two separate Statseeker servers with one running as
+the backup. The two servers should be directly connected to each
+other via a high-speed link using a second physical interface on
+each server.
+
+This install should not be chosen unless specific arrangements
+have been made to run two Statseeker servers in this manner."
+
+   dialog --title "Statseeker High Availability" --msgbox "${message}" 16 70
+
+
+   # TODO: This won't work here
+   # Will likely have to check disk gpart labels?
+   # Something needs to happen for checking partitioning for future upgrade..
+   [ -e "/dev/gpt/sshast" ] && has_hast=1
+
+fi
+
+
+#
+# Search avaliable disks for Statseeker install
+#
+CNT=0
+disk_list=''
+for disk in `/sbin/sysctl -n kern.disks`
+do
+   size=`diskinfo ${disk} | awk '{ print $4; }'`
+   [ -z "$size" ] && continue
+
+   size_gb=$(($size / 1024 / 1024 / 2))
+   [ "$size_gb" -eq 0 ] && continue
+
+   disk_dev=${disk}
+   disk_size=${size}
+   disk_list="${disk_list} ${disk} ${size_gb}G"
+   CNT=$((${CNT} + 1))
+done
+
+#
+# Check that at least one disk was found
+#
+if [ $CNT -eq 0 ]; then
+	if [ $AUTO_INSTALL -ne 1 ]; then
+		dialog --msgbox "\n      !!! Could not find a valid disk for Statseeker install !!!" 7 75
+	else
+		echo "\n      !!! Could not find a valid disk for Statseeker install !!!"
+	fi
+   abort
+fi
+
+#
+# Check for sufficient memory on the system.
+#
+min_physmem=1000000000
+physmem=`sysctl -n hw.physmem`
+if [ $physmem -lt $min_physmem ]; then
+   physmem_mb=$(($physmem / 1024 / 1024))
+   dialog --msgbox " !!! You must have at least 1 GB of memory to install statseeker !!!  \n\nYou only have $physmem_mb MB. \n\nPlease add more memory." 10 75
+   abort
+fi
+
+#
+# Ask the user which disk they want to use
+#
+if [ ${CNT} -gt 1 ]; then
+   exec 3>&1
+	if [ $AUTO_INSTALL -ne 1 ]; then
+		disk_dev=`echo "${disk_list}" | xargs dialog \
+			--backtitle 'FreeBSD Installer' \
+			--title 'Installation Disk Selection' \
+			--menu 'Choose the disk where you would like Statseeker installed:' \
+			0 0 0 2>&1 1>&3`
+	else
+		disk_dev=`echo "${disk_list}" | head -n1 | cut -d " " -f1`
+	fi
+   [ $? -eq 1 ] && abort
+   exec 3>&-
+   disk_size=`diskinfo ${disk_dev} | awk '{ print $4; }'`
+fi
+
+
+#
+# Now check to see if there is less than 60 GB of storage on disk.
+#
+if [ $USE_HA -eq 1 ]; then
+   check_size=$((125829120 * 2))
+else
+   check_size=$((125829120))
+fi
+
+
+if [ $disk_size -lt $check_size ]; then
+
+   GB_disk_size=$(($disk_size/2/1024/1024))
+   GB_check_size=$(($check_size/2/1024/1024))
+
+	if [ $AUTO_INSTALL -ne 1 ]; then
+		dialog --msgbox " !!! You must have at least $GB_check_size GB of storage to install statseeker !!!  \n\nYou only have $GB_disk_size GB of storage. \n\nPlease increase your storage size." 10 75
+	else
+		echo " !!! You must have at least $GB_check_size GB of storage to install statseeker !!!  \n\nYou only have $GB_disk_size GB of storage. \n\nPlease increase your storage size." 
+	fi
+	abort
+fi
+
+#
+# Define size of disk partitions: sizes are in 512 byte blocks
+#
+os_size=$((1024*1024*32)) # 16G
+
+# swap_size calculated below
+# data_size calculated below
+
+
+#
+# Calculate the size of swap partition based on memory and hard disk size:
+#  1. swap_size     := twice size of memory (bounded by min_swap_size, max_swap_size)
+#  2. min_swap_size := 4G
+#  3. max_swap_size := max( 4G, (2^n)/16 ) where n is the largest number such that 2^n <= disk_size
+#
+swap_size=`sysctl -n hw.physmem`             # memory in bytes
+swap_size=`echo "$swap_size * 2 / 512" | bc` # memory in 512byte blocks
+min_swap_size=$((1024 * 1024 * 8))           # 4G in 512byte blocks
+max_swap_size=$min_swap_size
+
+if [ $disk_size -gt $(($max_swap_size * 16)) ]; then
+   # Note: log2(min_swap_size * 16) == 27
+   CNT=27
+   TMP=$(($disk_size >> $CNT))
+   while [ $TMP -gt 1 ]; do
+      TMP=$(($TMP >> 1))
+      CNT=$(($CNT  + 1))
+   done
+   max_swap_size=$((1<<($CNT-4)))   # 2 to the power of: floor(log2(disk_size/16))
+fi
+
+if [ $swap_size -lt ${min_swap_size} ]; then
+   swap_size=${min_swap_size}
+elif [ $swap_size -gt ${max_swap_size} ]; then
+   swap_size=${max_swap_size}
+fi
+
+#
+# Define device labels for disk partitions
+#
+boot_label="boot"
+os1_label="os1"
+os2_label="os2"
+swap_label="swap"
+data_label="data"
+hast_label="hast"
+label_dir="/dev/gpt"
+label_list="${boot_label} ${os1_label} ${os2_label} ${swap_label} ${data_label}"
+
+
+#
+# If the partition structure needs to be updated, set do_partition=1
+# Otherwise set do_partition=0, allowing users the option to keep data
+#
+active=`gpart show -l ${disk_dev} | grep '\[bootme\]'`
+do_partition=1
+os_new=${os1_label}               # Partition to install new os
+os_oth=${os2_label}               # Partition to leave inactive
+
+if [ ! -z "${active}" ]; then
+
+   echo "${active}" | grep -qw "${os1_label}"
+   if [ $? -eq 0 ]; then
+      os_new=${os2_label}
+      os_oth=${os1_label}
+      do_partition=0
+   fi
+
+   echo "${active}" | grep -qw "${os2_label}" &&
+   do_partition=$((1-$do_partition))
+
+   for label in ${label_list}
+   do
+      [ -e "${label_dir}/${label}" ] || do_partition=1
+   done
+   if [ $USE_HA -eq 1 ]; then
+      if [ ${has_hast} -eq 0 ]; then
+         do_partition=1
+      fi
+   fi
+fi
+
+
+if [ ${do_partition} -eq 1 ]; then
+   os_new=${os1_label}
+   os_oth=${os2_label}
+fi
+
+
+#
+# This is for upgrading from Statseeker versions which predated this partition
+# structure. Keep this seperate, we need to make different assumptions about
+# disk & label names. Prompt the user whether to keep existing network config.
+#
+if [ $do_partition -eq 1 ]; then
+
+   old_root_partition=''
+   old_home_partition=''
+
+   [ -e "/dev/${disk_dev}s1a" ] && old_root_partition="/dev/${disk_dev}s1a"
+   [ -e "/dev/${disk_dev}p2"  ] && old_root_partition="/dev/${disk_dev}p2"
+   [ -e "/dev/${disk_dev}s1g" ] && old_home_partition="/dev/${disk_dev}s1g"
+   [ -e "/dev/${disk_dev}p7"  ] && old_home_partition="/dev/${disk_dev}p7"
+
+   if [ ! -z "$old_root_partition" -a ! -z "$old_home_partition" ]; then
+      root_mounted=0
+      home_mounted=0
+
+      mount -t ufs "${old_root_partition}" /mnt      && root_mounted=1 &&
+      mount -t ufs "${old_home_partition}" /mnt/home && home_mounted=1
+
+      if [ $? -eq 0 ] && [ -f "/mnt/${ssfile}" ]; then
+         ssversion=`cat /mnt/${ssfile}`
+
+         # Prompt the user to retain network config
+			if [ $AUTO_INSTALL -ne 1 ]; then
+				#dialog --yesno "                       !!! IMPORTANT !!!\nPlease ensure you have a valid backup before Upgrading Statseeker.\nIf you are upgrading and do not have a valid backup please power\noff the server now.\n\nDANGER This Statseeker upgrade requires changes to hard disk partitions. All data on the hard disk will be destroyed.\nWould you like to retain your existing system network configuration before upgrading?\n\n" 13 70
+			else
+				return_answer $auto_retain_network
+			fi
+
+         if [ $? -eq 0 ]; then
+            checkversion $ssversion 5.0.0
+            checklicence $ssversion
+            mkdir -p ${ss_tmp}
+            for file in ${keep_conf}; do
+               [ -d "/mnt/${file}" ] && mkdir -p "${ss_tmp}/${file}"
+               [ -f "/mnt/${file}" ] && cp "/mnt/${file}" "${ss_tmp}/${file}"
+            done
+            # User fstab entries need to be re-added manually the after partition upgrade
+            #[ -f "/mnt/${old_fstab}" ] && cp "/mnt/${old_fstab}" "${ss_tmp}/${old_fstab}"
+         fi
+      fi
+
+      [ $home_mounted -eq 1 ] && umount /mnt/home
+      [ $root_mounted -eq 1 ] && umount /mnt
+   fi
+
+fi
+
+
+#
+# We don't need to upgrade the partition structure.
+# Prompt the user whether to keep existing data
+#
+if [ $do_partition -eq 0 ]; then
+   do_partition=1
+
+   old_root_partition="${label_dir}/${os_oth}"
+   old_home_partition="${label_dir}/${data_label}"
+
+   root_mounted=0
+   home_mounted=0
+
+   mount -t ufs "${old_root_partition}" /mnt      && root_mounted=1 &&
+   mount -t ufs "${old_home_partition}" /mnt/home && home_mounted=1
+
+   if [ $? -eq 0 ] && [ -f "/mnt/${ssfile}" ]; then
+      ssversion=`cat /mnt/${ssfile}`
+
+      # Prompt the user to retain their data
+		if [ $AUTO_INSTALL -ne 1 ]; then
+			dialog --yesno "                       !!! IMPORTANT !!!\nPlease ensure you have a valid backup before Upgrading Statseeker.\nIf you are upgrading and do not have a valid backup please power\noff the server now.\n\nThis disk contains an existing Statseeker installation:\n v${ssversion}\n\nWould you like to keep the existing configuration and data?" 13 70
+		else
+			return_answer $auto_retain_data
+		fi
+
+      if [ $? -eq 0 ]; then
+         do_partition=0
+         checkversion $ssversion 5.0.0
+         checklicence $ssversion
+         mkdir -p ${ss_tmp}
+         for file in ${keep_conf}; do
+            [ -d "/mnt/${file}" ] && mkdir -p "${ss_tmp}/${file}"
+            [ -f "/mnt/${file}" ] && cp "/mnt/${file}" "${ss_tmp}/${file}"
+         done
+         [ -f "/mnt/${old_fstab}" ] && cp "/mnt/${old_fstab}" "${ss_tmp}/${old_fstab}"
+      fi
+   fi
+
+   [ $home_mounted -eq 1 ] && umount /mnt/home
+   [ $root_mounted -eq 1 ] && umount /mnt
+fi
+
+
+#
+# Do the disk partitioning
+#
+if [ $do_partition -eq 1 ]; then
+	
+	if [ $AUTO_INSTALL -ne 1 ]; then
+		dialog --yesno "                 DANGER\n\nAll data on the hard disk will be destroyed.\n\n         Do you wish to continue ?\n" 10 50 || abort
+
+		dialog --infobox "Partitioning hard disk" 3 70
+	else
+		echo "Partitioning hard disk"
+	fi
+
+   #
+   # Wipe the first meg of data off the disk. This will get rid
+   # of any crap fdisk/gpart information.
+   #
+   dd bs=1m count=1 if=/dev/zero of=/dev/${disk_dev} > /dev/null
+
+   #
+   # Also need to remove the last section of disk as a backup copy
+   # could exist there too
+   #
+   DISK_SIZE=`diskinfo /dev/${disk_dev} | awk '{ print $3 }'`
+   dd bs=1m count=1 if=/dev/zero of=/dev/${disk_dev} oseek=`echo "( $DISK_SIZE / 1024 / 1024 ) - 1" |bc -q` > /dev/null
+
+   #
+   # Create GPT scheme on ${disk_dev}
+   #
+   echo -n "gpart create: " >> ${logfile}
+   gpart create -s GPT ${disk_dev} >> ${logfile} || abort
+
+   #
+   # Need to get the reported gpt size because it is slightly smaller
+   # than what is reported by diskinfo.
+   #
+   gpt_size=`gpart show ${disk_dev} | grep GPT | awk '{ print $3 }'`
+   echo "GPT size ${gpt_size}" >> ${logfile}
+
+   #
+   # Write the master boot record
+   #
+   echo -n "gpart mbr: " >> ${logfile}
+   gpart bootcode -b /boot/pmbr ${disk_dev} >> ${logfile} || abort
+
+   #
+   # Create a dedicated freebsd-boot partition that can boot FreeBSD
+   # from a freebsd-ufs partition, and install bootstrap code into it.
+   #
+
+   echo -n "gpt boot partition: " >> ${logfile}
+   offset=40
+   gpart add -b ${offset} -s 88 -t freebsd-boot -l ${boot_label} ${disk_dev} >> ${logfile} || abort
+   offset=`expr ${offset} + 88`
+
+   echo -n "gpt bootcode: " >> ${logfile}
+   gpart bootcode -p /boot/gptboot -i 1 ${disk_dev} >> ${logfile} || abort
+
+   # / (os1) - p2
+   echo -n "gpart add / offset ${offset} size ${os_size} label ${os1_label}: " >> ${logfile}
+   gpart add -b ${offset} -s ${os_size} -t freebsd-ufs -l ${os1_label} ${disk_dev} >> ${logfile} || abort
+   offset=`expr ${offset} + ${os_size}`
+
+   # / (os2) - p3
+   echo -n "gpart add / offset ${offset} size ${os_size} label ${os2_label}: " >> ${logfile}
+   gpart add -b ${offset} -s ${os_size} -t freebsd-ufs -l ${os2_label} ${disk_dev} >> ${logfile} || abort
+   offset=`expr ${offset} + ${os_size}`
+
+   # swap - p4
+   echo -n "gpart add swap offset ${offset} size ${swap_size}: " >> ${logfile}
+   gpart add -b ${offset} -s ${swap_size} -t freebsd-swap -l ${swap_label} ${disk_dev} >> ${logfile} || abort
+   offset=`expr ${offset} + ${swap_size}`
+fi
+
+
+#
+# Configure High Availability
+#
+if [ $USE_HA -eq 1 ]; then
+   #
+   # Ask if Master or Slave
+   #
+   HA_ROLE=$(dialog --stdout --backtitle "High Availability Configuration" --title "Server HA Role" --radiolist "Select the HA Role for this Server." 10 70 2 master 'The Primary Statseeker Server' on slave 'The Backup Statseeker Server' off)
+   if [ $? -ne 0 -o -z "$HA_ROLE" ]; then
+      print "Error Selecting HA Role." >> ${logfile}
+      abort
+   fi
+
+   if [ "$HA_ROLE" == "master" ]; then
+      REMOTE_HA_ROLE='slave'
+   else
+      REMOTE_HA_ROLE='master'
+   fi
+
+   cat <<EOF >> $TMP_HA_CFG
+HA_ROLE='$HA_ROLE'
+EOF
+
+   #
+   # Generate SSH Key
+   #
+   if [ ! -f ${TMP_SSH_KEY}.pub ]; then
+      ha_info "Creating SSH Key..."
+      yes | ssh-keygen -t rsa -f $TMP_SSH_KEY -C 'Statseeker_HA_Root_Key' -N '' >/dev/null 2>&1
+      if [ $? -ne 0 ]; then
+         echo "Failed to create SSH Key" >> ${logfile}
+         abort
+      fi
+   fi
+
+   #
+   # Data Link Interface
+   #
+   INTERFACES=$(ha_get_interfaces)
+   NUM_INTS=$?
+   INTERFACES=$(echo "$INTERFACES" | sed 's/^ *//; s/ *$//')
+   # Not Enough Interfaces
+   if [ $NUM_INTS -lt 2 ]; then
+      ha_info "Statseeker HA requires 2 Interfaces, only $NUM_INTS found."
+      echo "Statseeker HA requires 2 Interfaces, only $NUM_INTS found." >> ${logfile}
+      exit 1;
+   fi
+   ha_show_diagram "dint"
+   # Request
+   DATA_INT=$(ha_request_interface "data" "$INTERFACES")
+   if [ $? -ne 0 -o -z "$DATA_INT" ]; then
+      echo "No Interface Selected for Data Link" >> ${logfile}
+      abort
+   fi
+
+
+   if [ "$HA_ROLE" == "slave" ]; then
+      #
+      # Remote Server Data Link IP
+      #
+      REMOTE_DATA_IP=""
+      ha_show_diagram "rdip"
+      while [ -z "$REMOTE_DATA_IP" ]; do
+         # Request
+         REMOTE_DATA_IP=$(ha_request_ip "data" "$REMOTE_DATA_IP")
+         if [ $? -ne 0 ]; then
+            echo "Error Getting Remote Server Data Link IP Address" >> ${logfile}
+            abort
+         fi
+
+         # Validate then Ping
+         ha_validate_ip "$REMOTE_DATA_IP"
+         if [ $? -ne 0 ]; then
+            REMOTE_DATA_IP=""
+         fi
+      done
+      DIP_1=$(echo "$REMOTE_DATA_IP" | cut -d. -f1-3)
+      DIP_2=$(echo "$REMOTE_DATA_IP" | cut -d. -f4)
+      if [ "$DIP_2" -eq "255" ]; then
+         DIP_2="0"
+      else
+         DIP_2=$(($DIP_2 + 1))
+      fi
+      DATA_IP="${DIP_1}.${DIP_2}"
+      DATA_MASK="255.255.255.0"
+
+      # Init Data Link Interface
+      ifconfig $DATA_INT $DATA_IP netmask $DATA_MASK
+      ifconfig $DATA_INT down
+      ifconfig $DATA_INT up
+
+      #
+      # Ping Remote
+      #
+      CAN_PING_REMOTE=0
+      while [ $CAN_PING_REMOTE -eq 0 ]; do
+         ha_info "Pinging Remote Server ($REMOTE_DATA_IP) ..."
+         ping -nqoc 3 -t 4 $REMOTE_DATA_IP >/dev/null 2>&1
+         if [ $? -ne 0 ]; then
+            dialog --title "Statseeker High Availability" --yesno "Can't Ping the Remote Server ($REMOTE_DATA_IP). Try again?" 0 0
+            if [ $? -ne 0 ]; then
+               echo "Failed to Ping Remote Server ($REMOTE_DATA_IP)" >> ${logfile}
+               abort
+            fi
+         else
+            CAN_PING_REMOTE=1
+         fi
+      done
+
+      #
+      # Copy SSH Key
+      #
+      CAN_SSH_REMOTE=0
+      while [ $CAN_SSH_REMOTE -eq 0 ]; do
+         KEY=$(cat ${TMP_SSH_KEY}.pub)
+         ha_info "Copying SSH Key to Remote Server ($REMOTE_DATA_IP) ..."
+         clear
+         echo ""
+         echo "Copying SSH Key to Remote Server ($REMOTE_DATA_IP) ..."
+         echo ""
+         ssh -o IdentityFile=$TMP_SSH_KEY -o StrictHostKeyChecking=no -o ConnectTimeout=4 -p 21 $REMOTE_DATA_IP "echo '$KEY' >> $SSH_AUTH && sed -i '.bak' -e 's/^Match User root.*LocalPort 22$/Match User root LocalAddress $REMOTE_DATA_IP Address $DATA_IP LocalPort 22/' $SSHD_CFG && service sshd restart" >/dev/null 2>&1
+         if [ $? -ne 0 ]; then
+            dialog --title "Statseeker High Availability" --yesno "Failed to copy SSH Key to Remote Server. Try Again?" 0 0
+            if [ $? -ne 0 ]; then
+               echo "Failed to copy SSH Key to Remote Server" >> ${logfile}
+               abort
+            fi
+         else
+            CAN_SSH_REMOTE=1
+         fi
+      done
+
+      #
+      # Retrieve SSH Key
+      #
+      ha_info "Copying SSH Key from Remote Server ($REMOTE_DATA_IP) ..."
+      scp -o IdentityFile=$TMP_SSH_KEY -o StrictHostKeyChecking=no -o ConnectTimeout=4 $REMOTE_DATA_IP:${SSH_KEY}.pub $TMP_SSH_AUTH >/dev/null 2>&1
+      if [ $? -ne 0 ]; then
+         #
+         # Create SSH Key on Remote
+         #
+         ha_info "Creating SSH Key on Remote Server ($REMOTE_DATA_IP) ..."
+         ssh -o IdentityFile=$TMP_SSH_KEY -o StrictHostKeyChecking=no -o ConnectTimeout=4 $REMOTE_DATA_IP "yes | ssh-keygen -t rsa -f $SSH_KEY -N ''"
+         if [ $? -ne 0 ]; then
+            echo "Failed to create SSH Key on Remote Server" >> ${logfile}
+            abort
+         fi
+         #
+         # Retrieve SSH Key
+         #
+         scp -o IdentityFile=$TMP_SSH_KEY -o StrictHostKeyChecking=no -o ConnectTimeout=4 $REMOTE_DATA_IP:${SSH_KEY}.pub $TMP_SSH_AUTH >/dev/null 2>&1
+         if [ $? -ne 0 ]; then
+            echo "Failed to copy SSH Key from Remote Server" >> ${logfile}
+            abort
+         fi
+      fi
+
+      # Get Remote HA CFG
+      scp -o IdentityFile=$TMP_SSH_KEY -o StrictHostKeyChecking=no -o ConnectTimeout=4 $REMOTE_DATA_IP:$HA_CFG /tmp/remote_HA.cfg >/dev/null 2>&1
+
+      # Copy remote web_config and ssl keys
+      scp -o IdentityFile=$TMP_SSH_KEY -o StrictHostKeyChecking=no -o ConnectTimeout=4 $REMOTE_DATA_IP:/home/system/etc/web_server.cfg /tmp/web_server.cfg >/dev/null 2>&1
+      scp -o IdentityFile=$TMP_SSH_KEY -o StrictHostKeyChecking=no -o ConnectTimeout=4 $REMOTE_DATA_IP:/home/system/etc/ssl.crt /tmp/ssl.crt >/dev/null 2>&1
+      scp -o IdentityFile=$TMP_SSH_KEY -o StrictHostKeyChecking=no -o ConnectTimeout=4 $REMOTE_DATA_IP:/home/system/etc/ssl.key /tmp/ssl.key >/dev/null 2>&1
+
+      # Get Remote SS Version
+      scp -o IdentityFile=$TMP_SSH_KEY -o StrictHostKeyChecking=no -o ConnectTimeout=4 $REMOTE_DATA_IP:/home/statseeker/.ssversion /tmp/remote_version >/dev/null 2>&1
+      REMOTE_VERSION=$(cat /tmp/remote_version)
+      if [ -z "$REMOTE_VERSION" ] || [ $REMOTE_VERSION != 5.0.0 ]; then
+         dialog --backtitle "High Availability Configuration" --title "Invalid Version" --msgbox "\nThe Statseeker version you are trying to install doesn't match the Master Server's Statseeker version.\nCurrent: 5.0.0\nMaster: $REMOTE_VERSION" 8 70
+         abort
+      fi
+
+      DATA_INT_ORIG="$DATA_INT"
+      REMOTE_DATA_IP_ORIG="$REMOTE_DATA_IP"
+      HA_ROLE_ORIG="$HA_ROLE"
+      . /tmp/remote_HA.cfg
+      REMOTE_DATA_INT="$DATA_INT"
+      REMOTE_DATA_MASK="$DATA_MASK"
+      REMOTE_MAIN_INT="$MAIN_INT"
+      REMOTE_MAIN_MASK="$MAIN_MASK"
+      REMOTE_MAIN_IP="$MAIN_IP"
+      DATA_INT="$DATA_INT_ORIG"
+      REMOTE_DATA_IP="$REMOTE_DATA_IP_ORIG"
+      HA_ROLE="$HA_ROLE_ORIG"
+      MAIN_INT=""
+      HWID=""
+      REMOTE_HA_SIZE="$HA_SIZE"
+
+      # Update Defaults
+      DIP_1=$(echo "$DATA_IP" | cut -d. -f1-3)
+      DIP_2=$(echo "$DATA_IP" | cut -d. -f4)
+      if [ "$DIP_2" -eq "255" ]; then
+         DIP_2="0"
+      else
+         DIP_2=$(($DIP_2 + 1))
+      fi
+      DATA_IP="${DIP_1}.${DIP_2}"
+
+      # Update Defaults
+      MIP_1=$(echo "$MAIN_IP" | cut -d. -f1-3)
+      MIP_2=$(echo "$MAIN_IP" | cut -d. -f4)
+      if [ "$MIP_2" -eq "255" ]; then
+         MIP_2="0"
+      else
+         MIP_2=$(($MIP_2 + 1))
+      fi
+      MAIN_IP="${MIP_1}.${MIP_2}"
+
+      # Get Remote Host Name
+      REMOTE_HOST_NAME=$(ssh -o IdentityFile=$TMP_SSH_KEY -o StrictHostKeyChecking=no -o ConnectTimeout=4 $REMOTE_DATA_IP "hostname")
+      if [ $? -eq 0 ]; then
+         REMOTE_HOST_NAME_SHORT=$(echo "$REMOTE_HOST_NAME" | sed 's/\..*//g')
+      fi
+
+      # Get Remote Hardware Id
+      REMOTE_HWID=$(ssh -o IdentityFile=$TMP_SSH_KEY -o StrictHostKeyChecking=no -o ConnectTimeout=4 $REMOTE_DATA_IP "/usr/local/statseeker/ss/bin/lic-check -H")
+      if [ $? -ne 0 ]; then
+         echo "Failed to get remote HWID" >> ${logfile}
+         abort
+      fi
+   fi
+
+
+   #
+   # Config Data Interface
+   #
+   ha_show_diagram "dip"
+   bsdinstall netconfig_ipv4 "$DATA_INT" "" 1 "$DATA_IP" "$DATA_MASK" "" "\Z1Data\Zn Link Interface Configuration"
+   DATA_IP=`  cat $BSDINSTALL_TMPETC/._rc.conf.net | grep -m1 "ifconfig_${DATA_INT}" | cut -d'"' -f2 | cut -d' ' -f2`
+   DATA_MASK=`cat $BSDINSTALL_TMPETC/._rc.conf.net | grep -m1 "ifconfig_${DATA_INT}" | cut -d'"' -f2 | cut -d' ' -f4`
+
+   #
+   # Config Main Interface
+   #
+   INTERFACES=`echo "$INTERFACES" | sed "s/$DATA_INT *//"`
+   ha_show_diagram "mint"
+   MAIN_INT=$(ha_request_interface "main" "$INTERFACES")
+   if [ $? -ne 0 -o -z "$MAIN_INT" ]; then
+      echo "No Interface Selected" >> ${logfile}
+      abort
+   fi
+   ha_show_diagram "mip"
+   bsdinstall netconfig_ipv4 "$MAIN_INT" "" "" "$MAIN_IP" "$MAIN_MASK" "$DEFAULT_GATEWAY" "\Z1Main\Zn Interface Configuration"
+   MAIN_IP=`  cat $BSDINSTALL_TMPETC/._rc.conf.net | grep -m1 "ifconfig_${MAIN_INT}" | cut -d'"' -f2 | cut -d' ' -f2`
+   MAIN_MASK=`cat $BSDINSTALL_TMPETC/._rc.conf.net | grep -m1 "ifconfig_${MAIN_INT}" | cut -d'"' -f2 | cut -d' ' -f4`
+   DEFAULT_GATEWAY=`cat $BSDINSTALL_TMPETC/rc.conf.router | grep -m1 'defaultrouter' | cut -d'"' -f2`
+
+   #
+   # Virtual IP
+   #
+   ha_show_diagram "vip"
+   VIRTUAL_IP=$(ha_request_ip "virtual" "$VIRTUAL_IP")
+   if [ $? -ne 0 ]; then
+      echo "Error Getting Virtual IP Address" >> ${logfile}
+      abort
+   fi
+   # Validate
+   ha_validate_ip "$VIRTUAL_IP"
+   if [ $? -ne 0 ]; then
+      echo "Invalid Virtual IP Address" >> ${logfile}
+      abort
+   fi
+
+   #
+   # CARP Secret
+   #
+   ha_show_diagram "vhost"
+   RESULT=$(ha_request_vhost "$CARP_PASS" "$VHID")
+   if [ $? -ne 0 ]; then
+      echo "Error Getting Shared Secret" >> ${logfile}
+      abort
+   fi
+   RESULT=$(echo "$RESULT" | sed -e 's/ +/ /g' -e 's/^ //' -e 's/ $//')
+   CARP_PASS=$(echo $RESULT | awk '{printf("%s",$1)}')
+   VHID=$(echo $RESULT | awk '{printf("%s",$2)}')
+   # Validate
+   if [ -z "$CARP_PASS" ]; then
+      echo "Invalid Shared Secret" >> ${logfile}
+      abort
+   fi
+   if [ -z "$VHID" ]; then
+      echo "Invalid Virtual Host ID" >> ${logfile}
+      abort
+   fi
+   case "$VHID" in
+   [!0-9]*)
+      echo "Virtual Host ID must be a number from 1 to 254" >> ${logfile}
+      abort
+      ;;
+   esac
+
+   if [ $VHID -eq 0 -o $VHID -ge 255 ]; then
+      echo "Virtual Host ID must be a number from 1 to 254" >> ${logfile}
+      abort
+   fi
+
+   # Hostname
+   bsdinstall hostname
+   HOST_NAME=`awk -F\" '/^hostname=".*"/ { print $2 }' ${BSDINSTALL_TMPETC}/rc.conf.hostname`
+   HOST_NAME_SHORT=`echo "$HOST_NAME" | sed 's/\..*//g'`
+
+   # DNS
+   if [ -n "$DOMAIN" ]; then
+      echo "search $DOMAIN" >> ${BSDINSTALL_TMPETC}/resolv.conf
+   else
+      HOST_DOMAIN=$(echo "$HOST_NAME" | sed -e 's/^[^\.]*\.*//')
+      echo "search $HOST_DOMAIN" >> ${BSDINSTALL_TMPETC}/resolv.conf
+   fi
+   if [ -n "$DNS_1" ]; then
+      echo "nameserver $DNS_1" >> ${BSDINSTALL_TMPETC}/resolv.conf
+   fi
+   if [ -n "$DNS_2" ]; then
+      echo "nameserver $DNS_2" >> ${BSDINSTALL_TMPETC}/resolv.conf
+   fi
+   bsdinstall netconfig 1
+   DOMAIN=""
+   DNS_1=""
+   DNS_2=""
+   while read key value; do
+   case "${key}" in
+   search) DOMAIN="${value}" ;;
+   nameserver) # is more trick as we have to distinguish v4 and v6
+      case "${value}" in
+      [0-9]*\.[0-9]*\.[0-9]*\.[0-9]*)
+         if [ -z "${DNS_1}" ] ; then
+            DNS_1="${value}"
+         elif [ -z "${DNS_2}" ]; then
+            DNS_2="${value}"
+         fi
+         ;;
+      esac
+      ;;
+   # ignore others
+   esac
+   done < ${BSDINSTALL_TMPETC}/resolv.conf
+
+   cat <<EOF >> $TMP_HA_CFG
+
+HWID='$HWID'
+
+MAIN_INT='$MAIN_INT'
+MAIN_IP='$MAIN_IP'
+MAIN_MASK='$MAIN_MASK'
+
+DATA_INT='$DATA_INT'
+DATA_IP='$DATA_IP'
+DATA_MASK='$DATA_MASK'
+
+VIRTUAL_IP='$VIRTUAL_IP'
+CARP_PASS='$CARP_PASS'
+VHID='$VHID'
+
+REMOTE_DATA_IP='$REMOTE_DATA_IP'
+REMOTE_HWID='$REMOTE_HWID'
+
+DEFAULT_GATEWAY='$DEFAULT_GATEWAY'
+
+HOST_NAME='$HOST_NAME'
+HOST_NAME_SHORT='$HOST_NAME_SHORT'
+
+DOMAIN='$DOMAIN'
+DNS_1='$DNS_1'
+DNS_2='$DNS_2'
+
+HAST_EXTENT_SIZE='${HAST_EXTENT_SIZE}'
+HAST_SYNC='not synced'
+EOF
+fi
+
+
+#
+# Continue the disk partitioning
+#
+if [ $do_partition -eq 1 ]; then
+
+   #
+   # HA partition Size
+   #
+   if [ $USE_HA -eq 1 ]; then
+      #
+      # Rounding error comment
+      #
+      # The min data/hast sizes are arbitrary. The user is only entering in the hast size
+      # so it doesn't matter if the end DATA_SIZE is a little bit less than the MIN_DATA_SIZE
+      #
+      # What could be confusing is if we say "enter a number between 30 and X", and they type
+      # 30 or X and it doesn't work due to rounding errors.
+      #
+      # So work in GB, and convert to bytes at the end and DATA_SIZE takes the
+      # hit for any rounding
+      #
+      TOTAL_SIZE=$(((${gpt_size} - ${offset}) * 512))
+      TOTAL_SIZE_GB=$(( $TOTAL_SIZE / 1000000000 ))
+
+      DATA_SIZE_GB=30
+
+      MIN_DATA_SIZE_GB=10
+      MIN_HAST_SIZE_GB=30
+      MAX_HAST_SIZE_GB=$(( $TOTAL_SIZE_GB - $MIN_DATA_SIZE_GB ))
+      RECOMMENDED_MIN_HAST_SIZE_GB=100
+
+      if [ $TOTAL_SIZE_GB -lt $DATA_SIZE_GB ]; then
+         DATA_SIZE_GB=${TOTAL_SIZE_GB}
+      fi
+      if [ $((${DATA_SIZE_GB} + ${MIN_HAST_SIZE_GB} )) -gt ${TOTAL_SIZE_GB} ]; then
+         DATA_SIZE_GB=$(( ${TOTALS_SIZE_GB} - ${MIN_HAST_SIZE_GB} ))
+      fi
+      if [ $DATA_SIZE_GB -lt $MIN_DATA_SIZE_GB ]; then
+         echo "Not enough disk space - aborting" >> ${logfile}
+         abort
+      fi
+
+      if [ -z "$REMOTE_HA_SIZE" ]; then
+         RECOMMENDED_SIZE_GB=$(( ${TOTAL_SIZE_GB} - ${DATA_SIZE_GB} ))
+
+         if [ ${RECOMMENDED_SIZE_GB} -lt ${RECOMMENDED_MIN_HAST_SIZE_GB} ]; then
+
+            DATA_GAP=$(( ${DATA_SIZE_GB} - ${MIN_DATA_SIZE_GB} ))
+            HAST_GAP=$(( ${RECOMMENDED_MIN_HAST_SIZE_GB} - ${RECOMMENDED_SIZE_GB} ))
+
+            if [ ${HAST_GAP} -lt ${DATA_GAP} ]; then
+               DATA_SIZE_GB=$((        ${DATA_SIZE_GB}        - ${HAST_GAP} ))
+               RECOMMENDED_SIZE_GB=$(( ${RECOMMENDED_SIZE_GB} + ${HAST_GAP} ))  # Should eq $RECOMMENDED_MIN_HAST_SIZE_GB
+            else
+               DATA_SIZE_GB=$((        ${DATA_SIZE_GB}        - ${DATA_GAP} ))  # Should eq $MIN_DATA_SIZE_GB
+               RECOMMENDED_SIZE_GB=$(( ${RECOMMENDED_SIZE_GB} + ${DATA_GAP} ))
+            fi
+         fi
+      else
+         RECOMMENDED_SIZE_GB=$REMOTE_HA_SIZE
+      fi
+
+      HA_SIZE=0
+      while [ "$HA_SIZE" == "0" ]; do
+         # Request
+         HA_SIZE=$(dialog --colors --stdout --backtitle "High Availability Configuration" --title "Data Store Size (GB)" --form "The size in GB of the Data Store.\n\Z1Warning\Zn: This size must be the same on both Servers." 0 0 0 'Size (GB)' 1 0 "${RECOMMENDED_SIZE_GB}" 1 20 16 0)
+         if [ $? -ne 0 ]; then
+            echo "Error Getting HA Size" >> ${logfile}
+            abort
+         fi
+
+         if [ $HA_SIZE -lt $MIN_HAST_SIZE_GB ] || [ $HA_SIZE -gt $MAX_HAST_SIZE_GB ]; then
+            dialog --backtitle "High Availability Configuration" --title "Invalid Size" --msgbox "The provided size $HA_SIZE is invalid. Please enter a value between $MIN_HAST_SIZE_GB and $MAX_HAST_SIZE_GB" 8 70
+            HA_SIZE="0"
+         fi
+
+      done
+      # Save to Config
+      cat <<EOF >> $TMP_HA_CFG
+
+HA_SIZE=$HA_SIZE
+EOF
+
+      DATA_SIZE=$(($TOTAL_SIZE - ($HA_SIZE * 1000000000 / 512 * 512)))
+      # /home (rest) - p5
+      data_size=$(($DATA_SIZE / 512 ))
+      # Use default newfs options for HA build
+      home_newfs_opts=""
+   else
+      home_newfs_opts="-U -d 16777216 -b 65536 -f 65536 -i 1048576"
+      data_size=$((${gpt_size} - ${offset}))
+   fi
+
+   echo -n "gpart add /home offset ${offset} size ${data_size}: " >> ${logfile}
+   gpart add -b ${offset} -s ${data_size} -t freebsd-ufs -l ${data_label} ${disk_dev} >> ${logfile} || abort
+
+   if [ $USE_HA -eq 1 ]; then
+      offset=$((${offset} + ${data_size}))
+      # Create another partition as the hast partition
+      # /home/statseeker - p6
+      HAST_DATA_SIZE=$(( ($HA_SIZE * 1000000000) / 512 ))
+      echo -n "gpart add /home/statseeker offset ${offset} size ${HAST_DATA_SIZE}: " >> ${logfile}
+      gpart add -b ${offset} -s ${HAST_DATA_SIZE} -t freebsd-ufs -l ${hast_label} ${disk_dev} >> ${logfile} || abort
+   fi
+fi
+
+os_new_index=`gpart show -l ${disk_dev} | grep -w ${os_new} | awk '{print $3}'`
+os_oth_index=`gpart show -l ${disk_dev} | grep -w ${os_oth} | awk '{print $3}'`
+
+
+#
+# Set / Unset bootme attributes
+#
+gpart set   -a 'bootme' -i ${os_new_index} ${disk_dev} >> ${logfile} || abort
+gpart unset -a 'bootme' -i ${os_oth_index} ${disk_dev} >> ${logfile} || abort
+
+
+#
+# Create newfs partitions
+#
+if [ $AUTO_INSTALL -ne 1 ]; then
+	dialog --infobox "Creating / filesystem..." 3 70
+else:
+	echo "Creating / filesystem..."
+fi
+newfs "${label_dir}/${os_new}" >> ${logfile} || abort
+
+if [ $do_partition -eq 1 ]; then
+	if [ $AUTO_INSTALL -ne 1 ]; then
+		dialog --infobox "Creating /home filesystem..." 3 70
+	else
+		echo "Creating /home filesystem..."
+	fi
+   newfs $home_newfs_opts "${label_dir}/${data_label}" >> ${logfile} || abort
+fi
+
+
+#
+# Mount the installation disk
+#
+mount -t ufs "${label_dir}/${os_new}" /mnt
+mkdir -m 1777 /mnt/tmp
+mkdir /mnt/var
+mkdir /mnt/usr
+mkdir /mnt/home
+mkdir /mnt/dev
+mkdir /mnt/etc
+mkdir /mnt/cdrom
+mount -t ufs "${label_dir}/${data_label}" /mnt/home
+mount -t devfs devfs /mnt/dev
+
+mkdir -p /mnt/home/system
+mkdir -p /mnt/home/system/etc
+mkdir -p /mnt/home/system/logs
+mkdir -p /mnt/home/system/ssh
+
+chown root:wheel /mnt/home/system
+
+#
+# Copy SSH Files
+#
+mv $TMP_SSH_KEY       /mnt/$SSH_KEY
+mv ${TMP_SSH_KEY}.pub /mnt/${SSH_KEY}.pub
+if [ "$HA_ROLE" == "slave" ]; then
+   mv $TMP_SSH_AUTH      /mnt/$SSH_AUTH
+fi
+
+
+FSTAB_HDR='# %-17s %-15s %-7s %-15s %-6s %-8s #\n'
+FSTAB_FMT='%-21s %-15s %-7s %-15s %-6s %-8s  \n'
+mnt_dir='/mnt'
+#
+# Create /etc/fstab
+#
+if [ -f "${ss_tmp}/${old_fstab}" ];
+then
+
+   #
+   # Note:
+   #
+   # If the fstab file does not contain the new labels then remove
+   # anything mounted on:
+   # /
+   # /home
+   # /swap
+   #
+   # But potentially keep other
+   #
+   cat ${ss_tmp}/${old_fstab} | \
+   awk '$2 != "Device"'     | \
+   awk '$2 != "/"     || $1 == "'"${label_dir}\/${os_new}"'"'     | \
+   awk '$2 != "/home" || $1 == "'"${label_dir}\/${data_label}"'"' | \
+   awk '$2 != "none"  || $1 == "'"${label_dir}\/${swap_label}"'"' > ${mnt_dir}/etc/fstab
+
+
+   #
+   # Order is important for / and /home if they do not exist (because we removed it above)
+   #
+   # For home, if it exists and is named correctly but located differently (ie by the user)
+   # then it should remain ok
+   #
+   (
+      printf "${FSTAB_HDR}"  Device                         Mountpoint     FStype  Options          Dump Pass
+      awk '$2 == "/"{exit 1}'        ${mnt_dir}/etc/fstab  && printf "${FSTAB_FMT}" "${label_dir}/${os_new}"       /               ufs     rw               1    1
+      awk '$2 == "/home"{exit 1}'    ${mnt_dir}/etc/fstab  && printf "${FSTAB_FMT}" "${label_dir}/${data_label}"   /home           ufs     rw               2    2
+   ) > ${mnt_dir}/etc/fstab.tmp
+
+   cat ${mnt_dir}/etc/fstab >> ${mnt_dir}/etc/fstab.tmp
+
+   #
+   # The others are replaced by putting them at the end if they don't already exist
+   #
+   (
+      awk '$2 == "none"{exit 1}'     ${mnt_dir}/etc/fstab  && printf "${FSTAB_FMT}" "${label_dir}/${swap_label}"   none            swap    sw               0    0
+   ) >> "${mnt_dir}/etc/fstab.tmp"
+
+   mv ${mnt_dir}/etc/fstab.tmp ${mnt_dir}/etc/fstab
+
+else
+
+        #   /dev/gpt/data
+   (
+      printf "${FSTAB_HDR}"  Device                         Mountpoint     FStype  Options          Dump Pass
+      printf "${FSTAB_FMT}" "${label_dir}/${os_new}"       /               ufs     rw               1    1
+      printf "${FSTAB_FMT}" "${label_dir}/${data_label}"   /home           ufs     rw               2    2
+      printf "${FSTAB_FMT}" "${label_dir}/${swap_label}"   none            swap    sw               0    0
+   ) > "/mnt/etc/fstab"
+
+fi
+
+
+# Copy the masters web_config files
+if [ -n "${CAN_SSH_REMOTE}" ] && [ ${CAN_SSH_REMOTE} -eq 1 ]; then
+   cp /tmp/web_server.cfg /mnt/home/system/etc/web_server.cfg 2>/dev/null
+   cp /tmp/ssl.crt /mnt/home/system/etc/ssl.crt 2>/dev/null
+   cp /tmp/ssl.key /mnt/home/system/etc/ssl.key 2>/dev/null
+fi
+
+
+#
+# Install the base and kernel distributions
+#
+if [ $AUTO_INSTALL -ne 1 ]; then
+	dialog --infobox "Installing operating system files. Please wait...." 3 70
+else
+	echo "Installing operating system files. Please wait...."
+fi
+tar -xf /usr/freebsd-dist/base.txz -C /mnt || abort
+if [ $AUTO_INSTALL -ne 1 ]; then
+	dialog --infobox "Installing kernel. Please wait...." 3 70
+else
+	echo "Installing kernel. Please wait...."
+fi
+tar -xf /usr/freebsd-dist/kernel.txz -C /mnt || abort
+
+
+#
+# Prompt user for configuration options
+#
+
+if [ $AUTO_INSTALL -ne 1 ]; then
+	bsdinstall time
+	bsdinstall rootpass
+fi
+
+if [ ! -f "${ss_tmp}/etc/rc.conf" -a $USE_HA -eq 0 ]; then
+	
+	if [ $AUTO_INSTALL -ne 1 ]; then
+		bsdinstall netconfig 2
+		bsdinstall hostname
+	fi
+   _DOMAIN=""
+   while read key value; do
+   case "${key}" in
+   search) _DOMAIN="${value}" ;;
+   esac
+   done < ${BSDINSTALL_TMPETC}/resolv.conf
+   _HOST_NAME=`awk -F\" '/^hostname=".*"/ { print $2 }' ${BSDINSTALL_TMPETC}/rc.conf.hostname`
+   _HOST_NAME_SHORT=`echo "$_HOST_NAME" | sed 's/\..*//g'`
+   # DNS
+   if [ -n "$_DOMAIN" ]; then
+      echo "search $_DOMAIN" >> ${BSDINSTALL_TMPETC}/resolv.conf
+   else
+      _HOST_DOMAIN=$(echo "$_HOST_NAME" | sed -e 's/^[^\.]*\.*//')
+      echo "search $_HOST_DOMAIN" >> ${BSDINSTALL_TMPETC}/resolv.conf
+   fi
+
+	if [ $AUTO_INSTALL -ne 1 ]; then
+		bsdinstall netconfig 1
+	fi
+fi
+
+if [ $AUTO_INSTALL -ne 1 ]; then
+	dialog --infobox "Saving system configuration..."
+else
+	echo "Saving system configuration..."
+fi
+
+#?
+bsdinstall config
+
+#
+# If the IP info wasn't configured manually
+# above, copy existing configuration
+#
+if [ -f "${ss_tmp}/etc/rc.conf" ]; then
+   for file in ${keep_conf}; do
+      [ -d "${ss_tmp}/${file}" ] && mkdir -p "/mnt/${file}"
+      [ -f "${ss_tmp}/${file}" ] && cp "${ss_tmp}/${file}" "/mnt/${file}"
+   done
+fi
+
+#
+# for auto_install, insert network configs directly into rc.conf
+#
+if [ $AUTO_INSTALL -ne 0 ]; then
+	PARTITIONS=ada0
+	DISTRIBUTIONS="kernel.txz base.txz"
+
+	#!/bin/sh
+	# insert entries to rc.conf
+	echo "hostname=\""$auto_hostname"\"" >> /mnt/etc/rc.conf
+	echo "ifconfig_"$auto_interface"=\"inet" $auto_ip_address "netmask" $auto_netmask"\"" >> /mnt/etc/rc.conf
+	echo "sshd_enable=YES" >> /mnt/etc/rc.conf
+	echo "defaultrouter=\""$auto_default_router"\"" >> /mnt/etc/rc.conf
+	# insert entires to hosts file
+	rm /mnt/etc/hosts
+   echo "::1	      localhost localhost."`echo $auto_hostname | awk '{split($0,a,"."); print a[2] "." a[3]}'` >> /mnt/etc/hosts
+   echo "127.0.0.1	localhost localhost."`echo $auto_hostname | awk '{split($0,a,"."); print a[2] "." a[3]}'` >> /mnt/etc/hosts
+   echo $auto_ip_address    $auto_hostname  `echo $auto_hostname | awk '{split($0,a,"."); print a[1]}'` >> /mnt/etc/hosts
+   echo $auto_ip_address    $auto_hostname >> /mnt/etc/hosts
+
+   #insert entries into resolv.conf
+	echo "search" $auto_domain >> /mnt/etc/resolv.conf
+	echo "nameserver" $auto_dns >> /mnt/etc/resolv.conf
+
+	# change root password
+	chroot ${mnt_dir} chpass -p $auto_password root
+fi
+
+#
+# Write HA Config
+#
+if [ $USE_HA -eq 1 ]; then
+   mkdir -p /mnt/home/ha/etc
+   cat <<EOF > /mnt/$HA_CFG
+# shell 3 0 0
+EOF
+   cat $TMP_HA_CFG >> /mnt/$HA_CFG
+fi
+
+
+#
+# Copy over FreeBSD distribution files
+#
+
+if [ $AUTO_INSTALL -ne 1 ]; then
+	dialog --infobox "Copying FreeBSD distribution files..." 3 70
+else
+	echo "Copying FreeBSD distribution files..."
+fi
+mkdir -p /mnt/${ROOT_DIR}/freebsd-dist
+cp /usr/freebsd-dist/*.txz /mnt/${ROOT_DIR}/freebsd-dist
+
+
+#
+# Copy the CDROM package repository to Statseeker's package directory
+#
+
+if [ $AUTO_INSTALL -ne 1 ]; then
+	dialog --infobox "Creating package repository..." 3 70
+else
+	echo "Creating package repository..." 
+fi
+cp -r /packages /mnt/${pkg_dir}
+rm /mnt/${pkg_dir}/TRANS.TBL
+
+
+if [ $USE_HA -eq 1 ]; then
+   #
+   # TODO: config VIP and HAST in /etc/rc.conf
+   #
+
+   HA_START_STR="# SS_HA_REPLACE_START"
+   HA_END_STR="# SS_HA_REPLACE_END"
+
+   #
+   # Set/Update Master's Remote Data IP
+   #
+   if [ "$HA_ROLE" == "slave" ]; then
+      ssh -o IdentityFile=/mnt$SSH_KEY -o StrictHostKeyChecking=no -o ConnectTimeout=4 $REMOTE_DATA_IP "sed -i '.bak' -e \"s/^REMOTE_DATA_IP=.*/REMOTE_DATA_IP='${DATA_IP}'/\" $HA_CFG" >/dev/null 2>&1
+      if [ $? -ne 0 ]; then
+         echo "Failed to update master's REMOTE_DATA_IP in $HA_CFG" >> ${logfile}
+         abort
+      fi
+   fi
+
+   #
+   # Check Remote hast.conf and update if needed
+   #
+   if [ "$HA_ROLE" == "slave" ]; then
+      scp -o IdentityFile=/mnt$SSH_KEY -o StrictHostKeyChecking=no -o ConnectTimeout=4 $REMOTE_DATA_IP:/etc/hast.conf /tmp/remote_hast.conf >/dev/null 2>&1
+      if [ $? -ne 0 ]; then
+         echo "Failed to scp master's /etc/hast.conf to /tmp" >> ${logfile}
+         abort
+      fi
+
+      (
+         cat /tmp/remote_hast.conf 2>/dev/null | sed "/${HA_START_STR}/,/${HA_END_STR}/d"
+         cat <<EOF
+$HA_START_STR
+listen tcp://${REMOTE_DATA_IP}
+metaflush off
+replication async
+timeout 3
+resource sshast {
+   exec /usr/local/statseeker/ss/bin/base-hast-event
+   on $REMOTE_HOST_NAME_SHORT {
+      local /dev/gpt/hast
+      remote $DATA_IP
+   }
+   on $HOST_NAME_SHORT {
+      local /dev/gpt/hast
+      remote $REMOTE_DATA_IP
+   }
+}
+$HA_END_STR
+EOF
+      ) > /tmp/remote_hast.conf.new
+
+      # Copy back to master
+      scp -o IdentityFile=/mnt$SSH_KEY -o StrictHostKeyChecking=no -o ConnectTimeout=4 /tmp/remote_hast.conf.new $REMOTE_DATA_IP:/etc/hast.conf >/dev/null 2>&1
+      if [ $? -ne 0 ]; then
+         echo "Failed to scp updated /etc/hast.conf to master" >> ${logfile}
+         abort
+      fi
+
+      # send sighup to master's hastd
+      ssh -o IdentityFile=/mnt$SSH_KEY -o StrictHostKeyChecking=no -o ConnectTimeout=4 $REMOTE_DATA_IP "pkill -1 hastd" >/dev/null 2>&1
+      if [ $? -ne 0 ]; then
+         echo "Failed to send SIGHUP to master's hastd" >> ${logfile}
+         abort
+      fi
+
+   fi
+
+#
+#   TODO: Below will allow the master server to re-take the
+#   interface after a fail-over. However, that is probably
+#   not what we want. If it is determined that this is
+#   defintely not what we want then it can be removed
+#
+
+#   if [ $HA_ROLE == master ]; then
+#      CARP_ADV="advbase 1 advskew 0"
+#   else
+#      CARP_ADV="advbase 3 advskew 200"
+#   fi
+
+   CARP_ADV="advbase 1 advskew 0"
+
+   (
+     cat "/mnt/etc/rc.conf"  2>/dev/null | grep -v \
+        -e "^ifconfig_${MAIN_INT}=" \
+        -e "^ifconfig_${MAIN_INT}_alias0=" \
+        -e "^ifconfig_${DATA_INT}=" \
+        -e '^hastd_enable='
+        -e '^apache24_enable='
+        -e '^system_setup_VARSIZE='
+        -e '^apache24_flags='
+
+     cat <<EOF
+hastd_enable="YES"
+ifconfig_${MAIN_INT}="inet ${MAIN_IP} netmask ${MAIN_MASK}"
+ifconfig_${MAIN_INT}_alias0="inet ${VIRTUAL_IP} netmask ${MAIN_MASK} vhid ${VHID} ${CARP_ADV} pass ${CARP_PASS}"
+ifconfig_${DATA_INT}="inet ${DATA_IP} netmask ${DATA_MASK}"
+apache24_enable="YES"
+apache24_flags="-d /usr/local/statseeker/ss -f etc/httpd.conf"
+system_setup_VARSZIE="0"
+EOF
+   ) >> /mnt/etc/rc.conf.new
+
+   mv /mnt/etc/rc.conf.new /mnt/etc/rc.conf
+
+
+   #
+   # create /etc/hast.conf
+   #
+   (
+     cat /mnt/etc/hast.conf 2>/dev/null | sed "/${HA_START_STR}/,/${HA_END_STR}/d"
+     test -z "$REMOTE_DATA_IP" && REMOTE_DATA_IP="none"
+     cat <<EOF
+$HA_START_STR
+listen tcp://${DATA_IP}
+metaflush off
+replication async
+timeout 3
+resource sshast {
+   exec /usr/local/statseeker/ss/bin/base-hast-event
+   on $HOST_NAME_SHORT {
+      local /dev/gpt/hast
+      remote $REMOTE_DATA_IP
+   }
+EOF
+      if [ "$HA_ROLE" == "slave" ]; then
+         cat <<EOF
+   on $REMOTE_HOST_NAME_SHORT {
+      local /dev/gpt/hast
+      remote $DATA_IP
+   }
+EOF
+      fi
+      cat <<EOF
+}
+$HA_END_STR
+EOF
+   ) > /mnt/etc/hast.conf.new
+
+   mv /mnt/etc/hast.conf.new /mnt/etc/hast.conf
+
+
+   # Only configure if master
+   if [ $HA_ROLE == "master" ]; then
+
+      chroot mnt /etc/netstart
+      chroot mnt service routing restart
+      chroot mnt service hostname restart
+      chroot mnt service hastd start
+      chroot mnt hastctl create -e ${HAST_EXTENT_SIZE} sshast
+      chroot mnt hastctl role primary sshast
+
+      CNT=0
+
+      while [ ! -e /dev/hast/sshast ] && [ $CNT -lt 100 ]; do
+         CNT=$(($CNT + 1))
+         sleep 1
+      done
+
+      if [ ! -e /dev/hast/sshast ]; then
+         echo "ERROR: Could not create hast partition using:"
+         cat /mnt/etc/hast.conf
+         abort
+      fi
+
+      newfs -U -d 16777216 -b 65536 -f 65536 -i 1048576 "/dev/hast/sshast" >> ${logfile} || abort
+   else
+      #
+      # Update Master's sshd_config
+      #
+      cmd="sed -i '.bak' -e 's/^Match User root.*LocalPort 22$/Match User root LocalAddress $REMOTE_DATA_IP Address $DATA_IP LocalPort 22/' $SSHD_CFG && service sshd restart"
+      ssh -o IdentityFile=/mnt$SSH_KEY -o StrictHostKeyChecking=no -o ConnectTimeout=4 $REMOTE_DATA_IP "$cmd" >/dev/null 2>&1
+      if [ $? -ne 0 ]; then
+         echo "Failed to update master's sshd_config" >> ${logfile}
+         abort
+      fi
+      chroot mnt /etc/netstart
+      chroot mnt service routing restart
+      chroot mnt service hostname restart
+      chroot mnt service hastd start
+      chroot mnt hastctl create -e ${HAST_EXTENT_SIZE} sshast
+   fi
+fi
+
+
+#
+# For installing Statseeker Packages
+#
+cat <<EOF > /mnt/tmp/ss_install.sh
+#!/bin/sh
+export PATH=/bin:/sbin:/usr/bin:/usr/sbin
+${pkg_dir}/package-upgrade.sh -d ${pkg_dir}
+exit \$?
+EOF
+
+
+#
+# Install Statseeker
+#
+chroot /mnt /bin/sh /tmp/ss_install.sh
+STATUS=$?
+
+if [ ! -f /mnt/home/system/etc/system.cfg ]; then
+   cat <<EOF > /mnt/home/system/etc/system.cfg
+# shell 3 0 0
+EOF
+fi
+chroot /mnt chown -R statseeker:statseeker /home/system/etc
+chroot /mnt touch /home/system/logs/httpd.access
+chroot /mnt touch /home/system/logs/httpd.errors
+chroot /mnt chown -R statseeker:statseeker /home/system/logs
+chroot /mnt chown -R statseeker:statseeker /mnt/home/ha
+
+
+if [ $USE_HA -eq 1 ]; then
+   chroot /mnt mkdir -p /root/.ssh
+
+   #
+   # Set/Update Master's remote HWID
+   #
+   HWID=$(chroot /mnt /usr/local/statseeker/ss/bin/lic-check -H)
+   sed -i '.bak' -e "s/^HWID=.*/HWID='$HWID'/" /mnt/$HA_CFG
+   if [ "$HA_ROLE" == "slave" ]; then
+      ssh -o IdentityFile=/mnt$SSH_KEY -o StrictHostKeyChecking=no -o ConnectTimeout=4 $REMOTE_DATA_IP "sed -i '.bak' -e \"s/^REMOTE_HWID=.*/REMOTE_HWID='${HWID}'/\" $HA_CFG" >/dev/null 2>&1
+      if [ $? -ne 0 ]; then
+         echo "Failed to update master's REMOTE_HWID in $HA_CFG" >> ${logfile}
+         abort
+      fi
+   fi
+
+
+fi
+
+# Copy over snmp_hostres.so.6 to fix bsnmp cpu usage issue.
+
+cp /public/snmp_hostres.so.6 /mnt/usr/lib/snmp_hostres.so.6
+
+#
+# Clean up and exit
+#
+rm -f  /mnt/tmp/ss_install.sh
+
+umount /mnt/home
+umount /mnt/dev
+umount /mnt
+exit $STATUS

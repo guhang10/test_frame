@@ -21,6 +21,7 @@ module_local_id = 0
 module_vmware_id = 0
 module_ansible_id = 0
 module_script_id = 0
+module_statseeker_id = 0
 
 class base(object):
     
@@ -96,4 +97,15 @@ class ssh_base(base):
         global module_ssh_id 
         self.module_ssh_id = module_ssh_id
         module_ssh_id += 1
+
+
+class statseeker_base(base):
+
+    def __init__(self, name, version):
+        super(statseeker_base, self).__init__(name, version)
+        self.base_type = "statseeker"
+
+        global module_statseeker_id 
+        self.module_statseeker_id = module_statseeker_id
+        module_statseeker_id += 1
 
