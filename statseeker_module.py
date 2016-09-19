@@ -49,6 +49,13 @@ class auto_iso_gen(base.statseeker_base):
         devnull = open(os.devnull, 'w')
 
         try:
+            # test if the provided mod_config and iso images are valid files
+            if not os.path.isfile(self.mod_config):
+                raise ERROR_exception("the provided installerconfig does not exist!")
+            
+            if not os.path.isfile(self.iso_orig):
+                raise ERROR_exception("the provided statseeker iso does not exist!")
+
             # mounting and copying process differs according to os
             system = check_output(["uname"]).rstrip()
 
