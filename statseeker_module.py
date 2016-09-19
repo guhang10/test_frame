@@ -28,7 +28,7 @@ class ERROR_exception(Exception):
 class auto_iso_gen(base.statseeker_base):
     description = "this module modify the selected statseeker iso to allow config install"
 
-    def __init__(self, interface, ip, netmask, router, hostname, dns, password, iso_orig, iso_mod):
+    def __init__(self, interface, ip, netmask, router, hostname, dns, password, mod_config, iso_orig, iso_mod):
         super(auto_iso_gen, self).__init__("auto_iso_gen", "5.x")
         self.interface = interface
         self.ip = ip
@@ -37,6 +37,7 @@ class auto_iso_gen(base.statseeker_base):
         self.hostname = hostname
         self.dns = dns
         self.password = password
+        self.mod_config = mod_config
         self.iso_orig = iso_orig
         self.iso_mod = iso_mod
         self.domain = hostname.split("@")[1]
@@ -48,12 +49,28 @@ class auto_iso_gen(base.statseeker_base):
         devnull = open(os.devnull, 'w')
 
         try:
-            message.append("mounting the iso image....")
-            call([ "mkdir", "/dev/mnt" ], stdout=devnull, stderr=devnull)
-            call([ "mount", self.iso_orig, "/dev/mnt" ], stdout=devnull, stderr=devnull)
+            # mounting and copying process differs according to os
+            system = check_output(["uname"]).rstrip()
 
-            message.append("copy the mounted directory....")
-            call([ "cp", "-r", "/dev/mnt", "disk"])
+            if system == "Linux":
+                message.append("mounting the iso image....")
+                call([ "mkdir", "/dev/mnt" ], stdout=devnull, stderr=devnull)
+                call([ "mount", self.iso_orig, "/dev/mnt" ], stdout=devnull, stderr=devnull)
+
+                message.append("copy the mounted directory....")
+                call([ "cp", "-r", "/dev/mnt", "disk"])
+
+            elif system == "FreeBSD":
+                message.append("mounting the iso image....")
+                md = "/dev/" + check_output([ "mdconfig", "-a", "-t", "vnode", "-f", self.iso_orig]).rstrip()
+                call([ "mount", "-t", "cd9660", md, "/mnt" ], stdout=devnull, stderr=devnull)
+
+                message.append("copy the mounted directory....")
+                call([ "cp", "-r", "/mnt/", "disk/"], stdout=devnull, stderr=devnull)
+
+            else:
+                raise ERROR_exception("This module must be run on Linux or Freebsd platform")
+
 
             message.append("creating the auto_install config file")
 
@@ -67,21 +84,33 @@ class auto_iso_gen(base.statseeker_base):
                 config.write("auto_password=" + self.password + "\n")
                 config.write("auto_domain=" + self.domain + "\n")
                 config.write("auto_dns=" + self.dns + "\n")
-
-            message.append("umount the iso image")
-            call([ "umount", "/dev/mnt/"], stdout=devnull, stderr=devnull)
-
+            
             message.append("copying modified installerconfig file....")
-            call([ "cp", "install_conf/installerconfig_mod", "disk/etc/installerconfig"], stdout=devnull, stderr=devnull)
+            call([ "cp", self.mod_config, "disk/etc/installerconfig"], stdout=devnull, stderr=devnull)
 
-            message.append("creating test.iso....")
+
+            if system == "Linux":
+                message.append("umount the iso image")
+                call([ "umount", "/dev/mnt/"], stdout=devnull, stderr=devnull)
+            else:
+                message.append("umount /mnt and delete the memory disk")
+                call([ "umount", "-f", "/mnt"], stdout=devnull, stderr=devnull)
+                call([ "mdconfig", "-du", md ])
+
+            message.append("creating iso image...")
 
             if not call(["mkisofs", "-rT", "-ldots", "-b", "boot/cdboot", "-no-emul-boot", "-V", "STATSEEKER_INSTALL", "-o", self.iso_mod, "disk"], stdout=devnull, stderr=devnull):
-                message.append("done, remove copied directories")
+                message.append(self.iso_mod + " has been created successfully")
+
+                message.append("iso created, remove copied directories")
                 call(["rm", "-rf", "disk"])
 
-            else:
+            else: 
+                message.append("failed to create iso, remove copied directories")
+                call(["rm", "-rf", "disk"])
+
                 raise ERROR_exception("something when wrong during repackaging of the iso")
+
             
         except ERROR_exception as e:
 
@@ -156,7 +185,7 @@ class licence(base.statseeker_base):
 
             return_dict["success"] = "false"
             meta_dict = meta.meta_header()
-            return_dict["error"] = e.msg
+            return_dict["error"] = e
             return_dict["meta"] = meta_dict.main()
             return_dict["message"] = message
             return json.dumps(return_dict)
