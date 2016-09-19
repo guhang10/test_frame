@@ -173,13 +173,14 @@ class vmware_get_vms(base.vmware_base):
                     return_dict["result"].append(self.construct_dict(child))
 
 
-        except vmodl.MethodFault as error:
-            print("Caught vmodl fault : " + error.msg)
+        except vmodl.MethodFault as e:
+            print("Caught vmodl fault : " + e.msg)
             
             if self.json:
                 return_dict["success"] = "false"
                 message = "oops"
-                meta_dict = meta.meta_header(host=self.host, user=self.user, ERROR=error.msg)
+                meta_dict = meta.meta_header(host=self.host, user=self.user)
+                return_dict["error"] = e.msg
                 return_dict["meta"] = meta_dict.main() 
                 return_dict["message"] = message
                 return json.dumps(return_dict)
@@ -282,11 +283,12 @@ class vmware_poweroff_vm(base.vmware_base):
          
         #   exception capture
 
-        except (ERROR_exception,vmodl.MethodFault)   as e:
+        except (ERROR_exception,vmodl.MethodFault) as e:
 
             if self.json:
                 return_dict["success"] = "false"
-                meta_dict = meta.meta_header(host=self.host, user=self.user, ERROR=e.msg)
+                meta_dict = meta.meta_header(host=self.host, user=self.user)
+                return_dict["error"] = e.msg
                 return_dict["meta"] = meta_dict.main()
                 return_dict["message"] = message
                 return json.dumps(return_dict)
@@ -390,7 +392,8 @@ class vmware_poweron_vm(base.vmware_base):
 
             if self.json:
                 return_dict["success"] = "false"
-                meta_dict = meta.meta_header(host=self.host, user=self.user, ERROR=e.msg)
+                meta_dict = meta.meta_header(host=self.host, user=self.user)
+                return_dict["error"] = e.msg
                 return_dict["meta"] = meta_dict.main()
                 return_dict["message"] = message
                 return json.dumps(return_dict)
@@ -509,7 +512,8 @@ class vmware_delete_vm(base.vmware_base):
 
             if self.json:
                 return_dict["success"] = "false"
-                meta_dict = meta.meta_header(host=self.host, user=self.user, ERROR=e.msg)
+                meta_dict = meta.meta_header(host=self.host, user=self.user)
+                return_dict["error"] = e.msg
                 return_dict["meta"] = meta_dict.main()
                 return_dict["message"] = message
                 return json.dumps(return_dict)
@@ -609,7 +613,8 @@ class vmware_reset_vm(base.vmware_base):
 
             if self.json:
                 return_dict["success"] = "false"
-                meta_dict = meta.meta_header(host=self.host, user=self.user, ERROR=e.msg)
+                meta_dict = meta.meta_header(host=self.host, user=self.user)
+                return_dict["error"] = e.msg
                 return_dict["meta"] = meta_dict.main()
                 return_dict["message"] = message
                 return json.dumps(return_dict)
@@ -710,7 +715,8 @@ class vmware_soft_reboot_vm(base.vmware_base):
 
             if self.json:
                 return_dict["success"] = "false"
-                meta_dict = meta.meta_header(host=self.host, user=self.user, ERROR=e.msg)
+                meta_dict = meta.meta_header(host=self.host, user=self.user)
+                return_dict["error"] = e.msg
                 return_dict["meta"] = meta_dict.main()
                 return_dict["message"] = message
                 return json.dumps(return_dict)
@@ -851,7 +857,8 @@ class vmware_list_datastore_info(base.vmware_base):
 
             if self.json:
                 return_dict["success"] = "false"
-                meta_dict = meta.meta_header(host=self.host, user=self.user, ERROR=e.msg)
+                meta_dict = meta.meta_header(host=self.host, user=self.user)
+                return_dict["error"] = e.msg
                 return_dict["meta"] = meta_dict.main()
                 return_dict["message"] = message
                 return json.dumps(return_dict)
@@ -1031,7 +1038,8 @@ class vmware_clone_vm(base.vmware_base):
 
             if self.json:
                 return_dict["success"] = "false"
-                meta_dict = meta.meta_header(host=self.host, user=self.user, ERROR=e.msg)
+                meta_dict = meta.meta_header(host=self.host, user=self.user)
+                return_dict["error"] = e.msg
                 return_dict["meta"] = meta_dict.main()
                 return_dect["message"] = message
                 return json.dumps(return_dict)
@@ -1128,7 +1136,8 @@ class vmware_create_vm(base.vmware_base):
 
             if self.json:
                 return_dict["success"] = "false"
-                meta_dict = meta.meta_header(host=self.host, user=self.user, ERROR=e.msg)
+                meta_dict = meta.meta_header(host=self.host, user=self.user)
+                return_dict["error"] = e.msg
                 return_dict["meta"] = meta_dict.main()
                 return_dict["message"] = message
                 return json.dumps(return_dict)
@@ -1294,7 +1303,8 @@ class vmware_add_disk(base.vmware_base):
 
             if self.json:
                 return_dict["success"] = "false"
-                meta_dict = meta.meta_header(host=self.host, user=self.user, ERROR=e.msg)
+                meta_dict = meta.meta_header(host=self.host, user=self.user)
+                return_dict["error"] = e.msg
                 return_dict["meta"] = meta_dict.main()
                 return_dict["message"] = message
                 return json.dumps(return_dict)
@@ -1446,7 +1456,8 @@ class vmware_add_nic(base.vmware_base):
 
             if self.json:
                 return_dict["success"] = "false"
-                meta_dict = meta.meta_header(host=self.host, user=self.user, ERROR=e.msg)
+                meta_dict = meta.meta_header(host=self.host, user=self.user)
+                return_dict["error"] = e.msg
                 return_dict["meta"] = meta_dict.main()
                 return_dict["message"] = message
                 return json.dumps(return_dict)
@@ -1654,7 +1665,8 @@ class vmware_add_cdrom(base.vmware_base):
 
             if self.json:
                 return_dict["success"] = "false"
-                meta_dict = meta.meta_header(host=self.host, user=self.user, ERROR=e.msg)
+                meta_dict = meta.meta_header(host=self.host, user=self.user)
+                return_dict["error"] = e.msg
                 return_dict["meta"] = meta_dict.main()
                 return_dict["message"] = message
                 return json.dumps(return_dict)
@@ -1782,7 +1794,8 @@ class vmware_datastore_upload(base.vmware_base):
 
             if self.json:
                 return_dict["success"] = "false"
-                meta_dict = meta.meta_header(host=self.host, user=self.user, ERROR=e.msg)
+                meta_dict = meta.meta_header(host=self.host, user=self.user)
+                return_dict["error"] = e.msg
                 return_dict["meta"] = meta_dict.main()
                 return_dict["message"] = message
                 return json.dumps(return_dict)

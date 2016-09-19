@@ -19,6 +19,7 @@ add_disk = vmware_module.vmware_add_disk("10.2.1.50", "hgu@SS.local", "hguSS!234
 add_test_nic = vmware_module.vmware_add_nic("10.2.1.50", "hgu@SS.local", "hguSS!234", True, "qa-vm-auto", "TEST_QA")
 #add_ha_nic = vmware_module.vmware_add_nic("10.2.1.50", "hgu@SS.local", "hguSS!234", True, "qa-vm-test146", "HA")
 add_cdrom = vmware_module.vmware_add_cdrom("10.2.1.50", "hgu@SS.local", "hguSS!234", True, "qa-vm-auto", "cdrom_test", iso="[datastore2-qa] auto_install.iso")
+test_licence = statseeker_module.licence("10.2.26.155", "77284604-3779060166", "statseeker", "qa")
 
 #print(test_poweroff.main())
 #print (test_get.main())
@@ -29,13 +30,14 @@ add_cdrom = vmware_module.vmware_add_cdrom("10.2.1.50", "hgu@SS.local", "hguSS!2
 #print (test_poweroff.main())
 
 #print (test_delete.main())
-print(auto_iso_gen.main())
-print(test_upload.main())
-print (create_vm.main())
-print (add_disk.main())
-print (add_test_nic.main())
-print (add_cdrom.main())
-print (test_poweron.main())
+#print(auto_iso_gen.main())
+#print(test_upload.main())
+#print (create_vm.main())
+#print (add_disk.main())
+#print (add_test_nic.main())
+#print (add_cdrom.main())
+#print (test_poweron.main())
+#print(test_licence.main())
 
 #################################################################################################################
 
