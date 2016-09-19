@@ -22,7 +22,7 @@ class ERROR_exception(Exception):
 
 
 #
-# auto_iso_gen: this module take a statseeker 5.x iso and modify it to enable unattended install 
+# auto_iso_gen: this module take a statseeker 5.x iso and modify it to enable unattended install requite explicit moded installerconfig
 #
 
 class auto_iso_gen(base.statseeker_base):
