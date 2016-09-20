@@ -3,8 +3,9 @@
 #################################################################################################################
 import vmware_module
 import statseeker_module
+import local_module
 
-auto_iso_gen = statseeker_module.auto_iso_gen("em0", "10.2.26.155", "255.255.255.0","10.2.26.254", "qa-vm-auto@statseeker.com", "10.1.5.2", "$6$4thfn1RHRHr6mrYA$mz0JES4qk6mxIDx9cUWmttDcnIhN.Svv7/4M3D6OPgA8pNGeEDTKmqoJf6bGepHaMA8lyLnIvlioLf3AyWpRq/", "/home/hang/tmp_module/install_conf/installerconfig_mod_5x", "/home/hang/Desktop/build/statseeker_5.0.0_install_64bit.iso",  "auto_test.iso")
+auto_iso_gen = statseeker_module.auto_iso_gen("em0", "10.2.26.155", "255.255.255.0","10.2.26.254", "qa-vm-auto@statseeker.com", "10.1.5.2", "$6$4thfn1RHRHr6mrYA$mz0JES4qk6mxIDx9cUWmttDcnIhN.Svv7/4M3D6OPgA8pNGeEDTKmqoJf6bGepHaMA8lyLnIvlioLf3AyWpRq/", "/home/hang/test_frame/install_conf/installerconfig_mod_5x", "/home/hang/Desktop/build/statseeker_5.0.0_install_64bit.iso",  "auto_test.iso")
 test_upload = vmware_module.vmware_datastore_upload("10.2.1.50", "hgu@SS.local", "hguSS!234", True, "auto_test.iso", "datastore2-qa", "auto_install.iso")
 test_get = vmware_module.vmware_get_vms("10.2.1.50", "hgu@SS.local", "hguSS!234", False)
 test_poweron = vmware_module.vmware_poweron_vm("10.2.1.50", "hgu@SS.local", "hguSS!234", True, name="qa-vm-auto")
@@ -20,6 +21,8 @@ add_test_nic = vmware_module.vmware_add_nic("10.2.1.50", "hgu@SS.local", "hguSS!
 #add_ha_nic = vmware_module.vmware_add_nic("10.2.1.50", "hgu@SS.local", "hguSS!234", True, "qa-vm-test146", "HA")
 add_cdrom = vmware_module.vmware_add_cdrom("10.2.1.50", "hgu@SS.local", "hguSS!234", True, "qa-vm-auto", "cdrom_test", iso="[datastore2-qa] auto_install.iso")
 test_licence = statseeker_module.licence("10.2.26.155", "77284604-3779060166", "statseeker", "qa")
+wait_for_ping = local_module.ping_test("10.2.26.155", "600")
+wait_for_ssh = local_module.ssh_check("statseeker@10.2.26.155", "qa")
 
 #print(test_poweroff.main())
 #print (test_get.main())
@@ -29,14 +32,16 @@ test_licence = statseeker_module.licence("10.2.26.155", "77284604-3779060166", "
 #print (test_reset.main())
 #print (test_poweroff.main())
 
-#print (test_delete.main())
-#print(auto_iso_gen.main())
-#print(test_upload.main())
-#print (create_vm.main())
-#print (add_disk.main())
-#print (add_test_nic.main())
-#print (add_cdrom.main())
-#print (test_poweron.main())
+print(test_delete.main())
+print(auto_iso_gen.main())
+print(test_upload.main())
+print(create_vm.main())
+print(add_disk.main())
+print(add_test_nic.main())
+print(add_cdrom.main())
+print(test_poweron.main())
+print(wait_for_ssh.main())
+#print(wait_for_ping.main())
 print(test_licence.main())
 
 #################################################################################################################
