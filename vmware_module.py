@@ -55,13 +55,14 @@ class vmware_connect_test(base.vmware_base):
             return_dict["message"] = message
             return_dict["meta"] = meta_dict.main()
             return json.dumps(return_dict)
-
-        return_dict["success"] = "true"
-        meta_dict = meta.meta_header(host=self.host, user=self.user)
-        return_dict["meta"] = meta_dict.main()
-        return_dict["message"] = message
-        return json.dumps(return_dict)
         
+        else:
+            return_dict["success"] = "true"
+            meta_dict = meta.meta_header(host=self.host, user=self.user)
+            return_dict["meta"] = meta_dict.main()
+            return_dict["message"] = message
+            return json.dumps(return_dict)
+            
 
 #
 # vmware_get_vms module
@@ -187,15 +188,16 @@ class vmware_get_vms(base.vmware_base):
             else:
                 return False
         
-        if self.json:
-            return_dict["success"] = "true"
-            meta_dict = meta.meta_header(host=self.host, user=self.user)
-            return_dict["meta"] = meta_dict.main()
-            return_dict["message"] = message
-            return json.dumps(return_dict)
         else:
-            return True
-        
+            if self.json:
+                return_dict["success"] = "true"
+                meta_dict = meta.meta_header(host=self.host, user=self.user)
+                return_dict["meta"] = meta_dict.main()
+                return_dict["message"] = message
+                return json.dumps(return_dict)
+            else:
+                return True
+            
 
 #
 # vmware_poweroff_vm module
@@ -295,16 +297,17 @@ class vmware_poweroff_vm(base.vmware_base):
             else:
                 print e.msg
                 return False
-            
-        if self.json:
-            return_dict["success"] = "true"
-            meta_dict = meta.meta_header(self.host, self.user, message)
-            return_dict["meta"] = meta_dict.main()
-            return_dict["message"] = message
-            return json.dumps(return_dict)
-        else:
-            return True
         
+        else:
+            if self.json:
+                return_dict["success"] = "true"
+                meta_dict = meta.meta_header(self.host, self.user, message)
+                return_dict["meta"] = meta_dict.main()
+                return_dict["message"] = message
+                return json.dumps(return_dict)
+            else:
+                return True
+            
    
 #
 # vmware_poweron_vm module: this module will not accept ipaddress as filter, off machines don't have ip field
@@ -401,15 +404,16 @@ class vmware_poweron_vm(base.vmware_base):
                 print e.msg
                 return False
             
-        if self.json:
-            return_dict["success"] = "true"
-            meta_dict = meta.meta_header(host=self.host, user=self.user)
-            return_dict["meta"] = meta_dict.main()
-            return_dict["message"] = message
-            return json.dumps(return_dict)
         else:
-            return True
-     
+            if self.json:
+                return_dict["success"] = "true"
+                meta_dict = meta.meta_header(host=self.host, user=self.user)
+                return_dict["meta"] = meta_dict.main()
+                return_dict["message"] = message
+                return json.dumps(return_dict)
+            else:
+                return True
+         
        
 #
 # vmware_delete_vm module
@@ -521,15 +525,16 @@ class vmware_delete_vm(base.vmware_base):
                 print e.msg
                 return False
             
-        if self.json:
-            return_dict["success"] = "true"
-            meta_dict = meta.meta_header(host=self.host, user=self.user)
-            return_dict["meta"] = meta_dict.main()
-            return_dict["message"] = message
-            return json.dumps(return_dict)
         else:
-            return True
-        
+            if self.json:
+                return_dict["success"] = "true"
+                meta_dict = meta.meta_header(host=self.host, user=self.user)
+                return_dict["meta"] = meta_dict.main()
+                return_dict["message"] = message
+                return json.dumps(return_dict)
+            else:
+                return True
+            
 
 #
 # vmware_reset_vm module: this module reset a vm (hard reset)
@@ -621,16 +626,17 @@ class vmware_reset_vm(base.vmware_base):
             else:
                 print e.msg
                 return False
-            
-        if self.json:
-            return_dict["success"] = "true"
-            meta_dict = meta.meta_header(host=self.host, user=self.user)
-            return_dict["meta"] = meta_dict.main()
-            return_dict["message"] = message
-            return json.dumps(return_dict)
-        else:
-            return True
         
+        else:
+            if self.json:
+                return_dict["success"] = "true"
+                meta_dict = meta.meta_header(host=self.host, user=self.user)
+                return_dict["meta"] = meta_dict.main()
+                return_dict["message"] = message
+                return json.dumps(return_dict)
+            else:
+                return True
+            
 
 #
 # vmware_soft_reboot_vm module: this module send target vm a  reboot signal(no gurantee for a reboot though)
@@ -724,15 +730,16 @@ class vmware_soft_reboot_vm(base.vmware_base):
                 print e.msg
                 return False
             
-        if self.json:
-            return_dict["success"] = "true"
-            meta_dict = meta.meta_header(host=self.host, user=self.user)
-            return_dict["meta"] = meta_dict.main()
-            return_dict["message"] = message
-            return json.dumps(return_dict)
         else:
-            return True
-        
+            if self.json:
+                return_dict["success"] = "true"
+                meta_dict = meta.meta_header(host=self.host, user=self.user)
+                return_dict["meta"] = meta_dict.main()
+                return_dict["message"] = message
+                return json.dumps(return_dict)
+            else:
+                return True
+            
         
 #
 #  wmare_list_datastore_info module: still haven't decide whether I want json output yet (definitely)
@@ -866,15 +873,16 @@ class vmware_list_datastore_info(base.vmware_base):
                 print e.msg
                 return False
             
-        if self.json:
-            return_dict["success"] = "true"
-            return_dict["result"] = datastores
-            meta_dict = meta.meta_header(host=self.host, user=self.user)
-            return_dict["meta"] = meta_dict.main()
-            return_dict["message"] = message
-            return json.dumps(return_dict)
         else:
-            return True
+            if self.json:
+                return_dict["success"] = "true"
+                return_dict["result"] = datastores
+                meta_dict = meta.meta_header(host=self.host, user=self.user)
+                return_dict["meta"] = meta_dict.main()
+                return_dict["message"] = message
+                return json.dumps(return_dict)
+            else:
+                return True
 
 
 #
@@ -1046,15 +1054,16 @@ class vmware_clone_vm(base.vmware_base):
             else:
                 print e.msg
                 return False
-            
-        if self.json:
-            return_dict["success"] = "true"
-            meta_dict = meta.meta_header(host=self.host, user=self.user)
-            return_dict["meta"] = meta_dict.main()
-            return_dect["message"] = message
-            return json.dumps(return_dict)
+        
         else:
-            return True
+            if self.json:
+                return_dict["success"] = "true"
+                meta_dict = meta.meta_header(host=self.host, user=self.user)
+                return_dict["meta"] = meta_dict.main()
+                return_dect["message"] = message
+                return json.dumps(return_dict)
+            else:
+                return True
 
 
 
@@ -1144,15 +1153,16 @@ class vmware_create_vm(base.vmware_base):
             else:
                 print e.msg
                 return False
-            
-        if self.json:
-            return_dict["success"] = "true"
-            meta_dict = meta.meta_header(host=self.host, user=self.user)
-            return_dict["meta"] = meta_dict.main()
-            return_dict["message"] = message
-            return json.dumps(return_dict)
+        
         else:
-            return True
+            if self.json:
+                return_dict["success"] = "true"
+                meta_dict = meta.meta_header(host=self.host, user=self.user)
+                return_dict["meta"] = meta_dict.main()
+                return_dict["message"] = message
+                return json.dumps(return_dict)
+            else:
+                return True
 
 
 
@@ -1312,14 +1322,15 @@ class vmware_add_disk(base.vmware_base):
                 print e.msg
                 return False
             
-        if self.json:
-            return_dict["success"] = "true"
-            meta_dict = meta.meta_header(host=self.host, user=self.user)
-            return_dict["meta"] = meta_dict.main()
-            return_dict["message"] = message
-            return json.dumps(return_dict)
         else:
-            return True
+            if self.json:
+                return_dict["success"] = "true"
+                meta_dict = meta.meta_header(host=self.host, user=self.user)
+                return_dict["meta"] = meta_dict.main()
+                return_dict["message"] = message
+                return json.dumps(return_dict)
+            else:
+                return True
 
 
 #
@@ -1464,15 +1475,16 @@ class vmware_add_nic(base.vmware_base):
             else:
                 print e.msg
                 return False
-            
-        if self.json:
-            return_dict["success"] = "true"
-            meta_dict = meta.meta_header(host=self.host, user=self.user)
-            return_dict["meta"] = meta_dict.main()
-            return_dict["message"] = message
-            return json.dumps(return_dict)
+           
         else:
-            return True
+            if self.json:
+                return_dict["success"] = "true"
+                meta_dict = meta.meta_header(host=self.host, user=self.user)
+                return_dict["meta"] = meta_dict.main()
+                return_dict["message"] = message
+                return json.dumps(return_dict)
+            else:
+                return True
 
 
 #
@@ -1673,15 +1685,16 @@ class vmware_add_cdrom(base.vmware_base):
             else:
                 print e.msg
                 return False
-            
-        if self.json:
-            return_dict["success"] = "true"
-            meta_dict = meta.meta_header(host=self.host, user=self.user)
-            return_dict["meta"] = meta_dict.main()
-            return_dict["message"] = message
-            return json.dumps(return_dict)
+        
         else:
-            return True
+            if self.json:
+                return_dict["success"] = "true"
+                meta_dict = meta.meta_header(host=self.host, user=self.user)
+                return_dict["meta"] = meta_dict.main()
+                return_dict["message"] = message
+                return json.dumps(return_dict)
+            else:
+                return True
 
 
 
@@ -1803,13 +1816,14 @@ class vmware_datastore_upload(base.vmware_base):
                 print e.msg
                 return False
             
-        if self.json:
-            return_dict["success"] = "true"
-            meta_dict = meta.meta_header(host=self.host, user=self.user)
-            return_dict["meta"] = meta_dict.main()
-            return_dict["message"] = message
-            return json.dumps(return_dict)
         else:
-            return True
+            if self.json:
+                return_dict["success"] = "true"
+                meta_dict = meta.meta_header(host=self.host, user=self.user)
+                return_dict["meta"] = meta_dict.main()
+                return_dict["message"] = message
+                return json.dumps(return_dict)
+            else:
+                return True
 
 

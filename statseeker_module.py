@@ -128,11 +128,13 @@ class auto_iso_gen(base.statseeker_base):
             return_dict["message"] = message
             return json.dumps(return_dict)
 
-        return_dict["success"] = "true"
-        meta_dict = meta.meta_header()
-        return_dict["message"] = message
-        return_dict["meta"] = meta_dict.main()
-        return json.dumps(return_dict)
+        else:
+
+            return_dict["success"] = "true"
+            meta_dict = meta.meta_header()
+            return_dict["message"] = message
+            return_dict["meta"] = meta_dict.main()
+            return json.dumps(return_dict)
 
 
 
@@ -192,14 +194,16 @@ class licence(base.statseeker_base):
 
             return_dict["success"] = "false"
             meta_dict = meta.meta_header()
-            return_dict["error"] = e
+            return_dict["error"] = str(e)
             return_dict["meta"] = meta_dict.main()
             return_dict["message"] = message
             return json.dumps(return_dict)
 
-        return_dict["success"] = "true"
-        meta_dict = meta.meta_header()
-        return_dict["message"] = message
-        return_dict["meta"] = meta_dict.main()
-        return json.dumps(return_dict)
+        else:
+
+            return_dict["success"] = "true"
+            meta_dict = meta.meta_header()
+            return_dict["message"] = message
+            return_dict["meta"] = meta_dict.main()
+            return json.dumps(return_dict)
 
