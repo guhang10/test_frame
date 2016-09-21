@@ -1579,12 +1579,15 @@ if [ $AUTO_INSTALL -ne 0 ]; then
    echo $auto_ip_address    $auto_hostname  `echo $auto_hostname | awk '{split($0,a,"."); print a[1]}'` >> /mnt/etc/hosts
    echo $auto_ip_address    $auto_hostname >> /mnt/etc/hosts
 
-   #insert entries into resolv.conf
+	#insert entries into resolv.conf
 	echo "search" $auto_domain >> /mnt/etc/resolv.conf
 	echo "nameserver" $auto_dns >> /mnt/etc/resolv.conf
 
 	# change root password
 	chroot ${mnt_dir} chpass -p $auto_password root
+
+	# enable ssh as root user
+	echo "PermitRootLogin yes" >> /mnt/etc/ssh/sshd_config
 fi
 
 #
