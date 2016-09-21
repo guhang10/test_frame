@@ -22,6 +22,7 @@ module_vmware_id = 0
 module_ansible_id = 0
 module_script_id = 0
 module_statseeker_id = 0
+module_remote_id = 0
 
 class base(object):
     
@@ -88,15 +89,15 @@ class script_base(base):
             raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), filename)
 
         
-class ssh_base(base):
+class remote_base(base):
 
     def __init__(self, name, version):
-        super(ssh_base, self).__init__(name, version)
-        self.base_type = "ssh"
+        super(remote_base, self).__init__(name, version)
+        self.base_type = "remote"
 
-        global module_ssh_id 
-        self.module_ssh_id = module_ssh_id
-        module_ssh_id += 1
+        global module_remote_id 
+        self.module_remote_id = module_remote_id
+        module_remote_id += 1
 
 
 class statseeker_base(base):
