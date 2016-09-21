@@ -50,14 +50,14 @@ class vmware_connect_test(base.vmware_base):
 
         except Exception as e:
             print e
-            return_dict["success"] = "false"
+            return_dict["success"] = "False"
             meta_dict = meta.meta_header(host=self.host, user=self.user, ERROR=error.msg)
             return_dict["message"] = message
             return_dict["meta"] = meta_dict.main()
             return json.dumps(return_dict)
         
         else:
-            return_dict["success"] = "true"
+            return_dict["success"] = "True"
             meta_dict = meta.meta_header(host=self.host, user=self.user)
             return_dict["meta"] = meta_dict.main()
             return_dict["message"] = message
@@ -178,7 +178,7 @@ class vmware_get_vms(base.vmware_base):
             print("Caught vmodl fault : " + e.msg)
             
             if self.json:
-                return_dict["success"] = "false"
+                return_dict["success"] = "False"
                 message = "oops"
                 meta_dict = meta.meta_header(host=self.host, user=self.user)
                 return_dict["error"] = e.msg
@@ -190,7 +190,7 @@ class vmware_get_vms(base.vmware_base):
         
         else:
             if self.json:
-                return_dict["success"] = "true"
+                return_dict["success"] = "True"
                 meta_dict = meta.meta_header(host=self.host, user=self.user)
                 return_dict["meta"] = meta_dict.main()
                 return_dict["message"] = message
@@ -288,7 +288,7 @@ class vmware_poweroff_vm(base.vmware_base):
         except (ERROR_exception,vmodl.MethodFault) as e:
 
             if self.json:
-                return_dict["success"] = "false"
+                return_dict["success"] = "False"
                 meta_dict = meta.meta_header(host=self.host, user=self.user)
                 return_dict["error"] = e.msg
                 return_dict["meta"] = meta_dict.main()
@@ -300,7 +300,7 @@ class vmware_poweroff_vm(base.vmware_base):
         
         else:
             if self.json:
-                return_dict["success"] = "true"
+                return_dict["success"] = "True"
                 meta_dict = meta.meta_header(self.host, self.user, message)
                 return_dict["meta"] = meta_dict.main()
                 return_dict["message"] = message
@@ -394,7 +394,7 @@ class vmware_poweron_vm(base.vmware_base):
         except (ERROR_exception,vmodl.MethodFault) as e:
 
             if self.json:
-                return_dict["success"] = "false"
+                return_dict["success"] = "False"
                 meta_dict = meta.meta_header(host=self.host, user=self.user)
                 return_dict["error"] = e.msg
                 return_dict["meta"] = meta_dict.main()
@@ -406,7 +406,7 @@ class vmware_poweron_vm(base.vmware_base):
             
         else:
             if self.json:
-                return_dict["success"] = "true"
+                return_dict["success"] = "True"
                 meta_dict = meta.meta_header(host=self.host, user=self.user)
                 return_dict["meta"] = meta_dict.main()
                 return_dict["message"] = message
@@ -515,7 +515,7 @@ class vmware_delete_vm(base.vmware_base):
         except (ERROR_exception,vmodl.MethodFault) as e:
 
             if self.json:
-                return_dict["success"] = "false"
+                return_dict["success"] = "False"
                 meta_dict = meta.meta_header(host=self.host, user=self.user)
                 return_dict["error"] = e.msg
                 return_dict["meta"] = meta_dict.main()
@@ -527,7 +527,7 @@ class vmware_delete_vm(base.vmware_base):
             
         else:
             if self.json:
-                return_dict["success"] = "true"
+                return_dict["success"] = "True"
                 meta_dict = meta.meta_header(host=self.host, user=self.user)
                 return_dict["meta"] = meta_dict.main()
                 return_dict["message"] = message
@@ -617,7 +617,7 @@ class vmware_reset_vm(base.vmware_base):
         except (ERROR_exception,vmodl.MethodFault) as e:
 
             if self.json:
-                return_dict["success"] = "false"
+                return_dict["success"] = "False"
                 meta_dict = meta.meta_header(host=self.host, user=self.user)
                 return_dict["error"] = e.msg
                 return_dict["meta"] = meta_dict.main()
@@ -629,7 +629,7 @@ class vmware_reset_vm(base.vmware_base):
         
         else:
             if self.json:
-                return_dict["success"] = "true"
+                return_dict["success"] = "True"
                 meta_dict = meta.meta_header(host=self.host, user=self.user)
                 return_dict["meta"] = meta_dict.main()
                 return_dict["message"] = message
@@ -720,7 +720,7 @@ class vmware_soft_reboot_vm(base.vmware_base):
         except (ERROR_exception,vmodl.MethodFault) as e:
 
             if self.json:
-                return_dict["success"] = "false"
+                return_dict["success"] = "False"
                 meta_dict = meta.meta_header(host=self.host, user=self.user)
                 return_dict["error"] = e.msg
                 return_dict["meta"] = meta_dict.main()
@@ -732,7 +732,7 @@ class vmware_soft_reboot_vm(base.vmware_base):
             
         else:
             if self.json:
-                return_dict["success"] = "true"
+                return_dict["success"] = "True"
                 meta_dict = meta.meta_header(host=self.host, user=self.user)
                 return_dict["meta"] = meta_dict.main()
                 return_dict["message"] = message
@@ -787,18 +787,24 @@ class vmware_list_datastore_info(base.vmware_base):
 
     def main(self):
 
+        message = []
+        return_dict = {}
+
         try:
             service_instance = connect.SmartConnect(host=self.host ,user=self.user,
                     pwd=self.password, port=443, sslContext=self.context)
 
             atexit.register(connect.Disconnect, service_instance)
 
-            message = []
-            return_dict = {}
-
+            
             if not service_instance:
-                print("could not connect ot the host with given credentials")
-                return False
+                if not self.json:
+                    print("could not connect ot the host with given credentials")
+                    return False
+                else:
+                    raise ERROR_exception("could not connect ot the host with given credentials")
+            else:
+                message.append("connection to " + self.host + " established")
 
             content = service_instance.RetrieveContent()
 
@@ -863,7 +869,7 @@ class vmware_list_datastore_info(base.vmware_base):
         except (ERROR_exception,vmodl.MethodFault) as e:
 
             if self.json:
-                return_dict["success"] = "false"
+                return_dict["success"] = "False"
                 meta_dict = meta.meta_header(host=self.host, user=self.user)
                 return_dict["error"] = e.msg
                 return_dict["meta"] = meta_dict.main()
@@ -875,7 +881,7 @@ class vmware_list_datastore_info(base.vmware_base):
             
         else:
             if self.json:
-                return_dict["success"] = "true"
+                return_dict["success"] = "True"
                 return_dict["result"] = datastores
                 meta_dict = meta.meta_header(host=self.host, user=self.user)
                 return_dict["meta"] = meta_dict.main()
@@ -1006,7 +1012,7 @@ class vmware_clone_vm(base.vmware_base):
         clonespec.template = False
         #clonespec.config = vmconf
 
-        #customization of freebsd vms are not supported in vmware as for now, power_on stays false
+        #customization of freebsd vms are not supported in vmware as for now, power_on stays False
         #when cloning from vm instead of template
         #clonespec.customization = customspec 
         
@@ -1045,7 +1051,7 @@ class vmware_clone_vm(base.vmware_base):
         except (ERROR_exception,vmodl.MethodFault) as e:
 
             if self.json:
-                return_dict["success"] = "false"
+                return_dict["success"] = "False"
                 meta_dict = meta.meta_header(host=self.host, user=self.user)
                 return_dict["error"] = e.msg
                 return_dict["meta"] = meta_dict.main()
@@ -1057,7 +1063,7 @@ class vmware_clone_vm(base.vmware_base):
         
         else:
             if self.json:
-                return_dict["success"] = "true"
+                return_dict["success"] = "True"
                 meta_dict = meta.meta_header(host=self.host, user=self.user)
                 return_dict["meta"] = meta_dict.main()
                 return_dect["message"] = message
@@ -1144,7 +1150,7 @@ class vmware_create_vm(base.vmware_base):
         except (ERROR_exception,vmodl.MethodFault) as e:
 
             if self.json:
-                return_dict["success"] = "false"
+                return_dict["success"] = "False"
                 meta_dict = meta.meta_header(host=self.host, user=self.user)
                 return_dict["error"] = e.msg
                 return_dict["meta"] = meta_dict.main()
@@ -1156,7 +1162,7 @@ class vmware_create_vm(base.vmware_base):
         
         else:
             if self.json:
-                return_dict["success"] = "true"
+                return_dict["success"] = "True"
                 meta_dict = meta.meta_header(host=self.host, user=self.user)
                 return_dict["meta"] = meta_dict.main()
                 return_dict["message"] = message
@@ -1312,7 +1318,7 @@ class vmware_add_disk(base.vmware_base):
         except (ERROR_exception,vmodl.MethodFault) as e:
 
             if self.json:
-                return_dict["success"] = "false"
+                return_dict["success"] = "False"
                 meta_dict = meta.meta_header(host=self.host, user=self.user)
                 return_dict["error"] = e.msg
                 return_dict["meta"] = meta_dict.main()
@@ -1324,7 +1330,7 @@ class vmware_add_disk(base.vmware_base):
             
         else:
             if self.json:
-                return_dict["success"] = "true"
+                return_dict["success"] = "True"
                 meta_dict = meta.meta_header(host=self.host, user=self.user)
                 return_dict["meta"] = meta_dict.main()
                 return_dict["message"] = message
@@ -1466,7 +1472,7 @@ class vmware_add_nic(base.vmware_base):
         except (ERROR_exception,vmodl.MethodFault) as e:
 
             if self.json:
-                return_dict["success"] = "false"
+                return_dict["success"] = "False"
                 meta_dict = meta.meta_header(host=self.host, user=self.user)
                 return_dict["error"] = e.msg
                 return_dict["meta"] = meta_dict.main()
@@ -1478,7 +1484,7 @@ class vmware_add_nic(base.vmware_base):
            
         else:
             if self.json:
-                return_dict["success"] = "true"
+                return_dict["success"] = "True"
                 meta_dict = meta.meta_header(host=self.host, user=self.user)
                 return_dict["meta"] = meta_dict.main()
                 return_dict["message"] = message
@@ -1676,7 +1682,7 @@ class vmware_add_cdrom(base.vmware_base):
         except (ERROR_exception,vmodl.MethodFault) as e:
 
             if self.json:
-                return_dict["success"] = "false"
+                return_dict["success"] = "False"
                 meta_dict = meta.meta_header(host=self.host, user=self.user)
                 return_dict["error"] = e.msg
                 return_dict["meta"] = meta_dict.main()
@@ -1688,7 +1694,7 @@ class vmware_add_cdrom(base.vmware_base):
         
         else:
             if self.json:
-                return_dict["success"] = "true"
+                return_dict["success"] = "True"
                 meta_dict = meta.meta_header(host=self.host, user=self.user)
                 return_dict["meta"] = meta_dict.main()
                 return_dict["message"] = message
@@ -1806,7 +1812,7 @@ class vmware_datastore_upload(base.vmware_base):
         except (ERROR_exception,vmodl.MethodFault) as e:
 
             if self.json:
-                return_dict["success"] = "false"
+                return_dict["success"] = "False"
                 meta_dict = meta.meta_header(host=self.host, user=self.user)
                 return_dict["error"] = e.msg
                 return_dict["meta"] = meta_dict.main()
@@ -1818,7 +1824,7 @@ class vmware_datastore_upload(base.vmware_base):
             
         else:
             if self.json:
-                return_dict["success"] = "true"
+                return_dict["success"] = "True"
                 meta_dict = meta.meta_header(host=self.host, user=self.user)
                 return_dict["meta"] = meta_dict.main()
                 return_dict["message"] = message

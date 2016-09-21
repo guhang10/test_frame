@@ -22,7 +22,7 @@ class ERROR_exception(Exception):
 
 
 #
-# auto_iso_gen: this module take a statseeker 5.x iso and modify it to enable unattended install requite explicit moded installerconfig
+# auto_iso_gen: this module take a statseeker iso and modify it to enable unattended install require explicit moded installerconfig
 #
 
 class auto_iso_gen(base.statseeker_base):
@@ -121,7 +121,7 @@ class auto_iso_gen(base.statseeker_base):
             
         except ERROR_exception as e:
 
-            return_dict["success"] = "false"
+            return_dict["success"] = "False"
             meta_dict = meta.meta_header()
             return_dict["error"] = e.msg
             return_dict["meta"] = meta_dict.main()
@@ -130,7 +130,7 @@ class auto_iso_gen(base.statseeker_base):
 
         else:
 
-            return_dict["success"] = "true"
+            return_dict["success"] = "True"
             meta_dict = meta.meta_header()
             return_dict["message"] = message
             return_dict["meta"] = meta_dict.main()
@@ -192,7 +192,7 @@ class licence(base.statseeker_base):
         except(paramiko.BadHostKeyException, paramiko.AuthenticationException, 
                 paramiko.SSHException, socket.error, ERROR_exception) as e:
 
-            return_dict["success"] = "false"
+            return_dict["success"] = "False"
             meta_dict = meta.meta_header()
             return_dict["error"] = str(e)
             return_dict["meta"] = meta_dict.main()
@@ -201,7 +201,7 @@ class licence(base.statseeker_base):
 
         else:
 
-            return_dict["success"] = "true"
+            return_dict["success"] = "True"
             meta_dict = meta.meta_header()
             return_dict["message"] = message
             return_dict["meta"] = meta_dict.main()

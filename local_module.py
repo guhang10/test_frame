@@ -53,7 +53,7 @@ class ping_test(base.local_base):
 
         except ERROR_exception as e:
 
-            return_dict["success"] = "false"
+            return_dict["success"] = "False"
             meta_dict = meta.meta_header()
             return_dict["error"] = e.msg
             return_dict["meta"] = meta_dict.main()
@@ -61,7 +61,7 @@ class ping_test(base.local_base):
             return json.dumps(return_dict)
 
         else:
-            return_dict["success"] = "true"
+            return_dict["success"] = "True"
             meta_dict = meta.meta_header()
             return_dict["message"] = message
             return_dict["meta"] = meta_dict.main()

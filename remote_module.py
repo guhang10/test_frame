@@ -66,7 +66,7 @@ class ssh_check(base.remote_base):
         except(paramiko.BadHostKeyException, paramiko.AuthenticationException, 
                 paramiko.SSHException) as e:
             
-            return_dict["success"] = "false"
+            return_dict["success"] = "False"
             meta_dict = meta.meta_header()
             return_dict["error"] = str(e)
             return_dict["meta"] = meta_dict.main()
@@ -74,7 +74,7 @@ class ssh_check(base.remote_base):
             return json.dumps(return_dict)
 
         else:
-            return_dict["success"] = "true"
+            return_dict["success"] = "True"
             meta_dict = meta.meta_header()
             return_dict["message"] = message
             return_dict["meta"] = meta_dict.main()
