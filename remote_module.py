@@ -131,4 +131,112 @@ class run_script(base.remote_base):
             return False
 
 
+#
+# add_route module: add route to statseekerbox, toggle for wether adding it permanently
+#
+
+class add_route(base.remote_base):
+    description = "add permanent route to statseeker box"
+
+    def __init__(self, host, password, perm, **net):
+        super(add_route, self).__init__("add_route", "n/a")
+        self.password = password
+        self.user = "root"
+        self.host = host
+        self.perm = perm
+        self.net = net
+        
+    def main(self):
+        message = []
+        return_dict = {}
+
+        devnull = open(os.devnull, 'w')
+        start = time.time()
+        client = paramiko.SSHClient()
+        max_span = 20
+
+        try:
+            if "route" not in self.net:
+                raise ERROR_exception("no route provided")
+            else:
+                route = self.net["route"]
+
+            if "gateway" not in self.net:
+                raise ERROR_exception("no gateway provided")
+            else:
+                gateway = self.net["gateway"]
+
+
+            client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+            subprocess.call(["ssh-keygen", "-R", self.host], stdout=devnull, stderr=devnull)
+            client.connect(self.host, username=self.user, password=self.password, 
+                           timeout=max_span, banner_timeout=max_span)
+            message.append("connection established")
+
+            # Add temporary route
+            (stdin, stdout, stderr) = client.exec_command("route add " + route + " " + gateway)
+            error = stderr.read().strip("\n")
+            out_put = stdout.read().strip("\n")
+
+            if error:
+                raise ERROR_exception(error + " " + out_put)
+            else:
+                message.append(out_put)
+
+            # If user decide to a add route permanently, write to rc.conf
+            if self.perm:
+                sftp = client.open_sftp()
+                
+                with sftp.open("/etc/rc.conf","r") as f:
+                    lines = f.readlines()
+
+                found_route = False
+                for idx, line in enumerate(lines):
+                    line = str(line)
+                    if "static_routes" in line:
+                        found_route = True
+                        route_list = line.split('=')[1].replace("\"","").strip("\n").split(" ")
+                        # Find an indexed name
+                        n=0
+                        while ("net" + str(n)) in route_list:
+                            n = n + 1
+                        route_name = "net" + str(n)
+                        route_list.append(route_name)
+                        lines[idx] = "static_routes=\"" + " ".join(route_list) + "\"" + "\n"
+                
+                if not found_route:
+                    route_name = "net0"
+                    lines.append("static_routes=\"net0\"\n")
+
+                lines.append("route_" + route_name + "=\"-net " + route + " " + gateway + "\"" + "\n")
+
+                # wite the modified lines to rc.conf
+                with sftp.open("/etc/rc.conf", "w") as f:
+                    f.write("".join(lines))
+
+                message.append("writing to rc.conf")
+
+            client.close()
+                
+        
+        except(paramiko.BadHostKeyException, paramiko.AuthenticationException, 
+                paramiko.SSHException, ERROR_exception) as e:
+            
+            return_dict["success"] = "False"
+            meta_dict = meta.meta_header()
+            if hasattr(e, "msg"):
+                return_dict["error"] = e.msg
+            else:
+                return_dict["error"] = str(e)
+            return_dict["meta"] = meta_dict.main()
+            return_dict["message"] = message
+            return json.dumps(return_dict)
+
+        else:
+            return_dict["success"] = "True"
+            meta_dict = meta.meta_header()
+            return_dict["message"] = message
+            return_dict["meta"] = meta_dict.main()
+            return json.dumps(return_dict)
+
 
