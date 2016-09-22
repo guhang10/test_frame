@@ -11,6 +11,7 @@ import requests
 import warnings
 from vm_tools import tasks
 import subprocess
+import os
 
 from pyVim import connect
 from pyVmomi import vmodl
@@ -1725,15 +1726,23 @@ class vmware_datastore_upload(base.vmware_base):
 
     
     def main(self):
+        message = []
+        return_dict = {}
+
+           
 
         try:
+            # File validation
+            if not os.path.isfile(self.local_file):
+                raise ERROR_exception("The provided local iso doesn't exist")
+            else:
+                pass
+            
+            # Connect to vcenter
             service_instance = connect.SmartConnect(host=self.host ,user=self.user,
                     pwd=self.password, port=443, sslContext=self.context)
 
             atexit.register(connect.Disconnect, service_instance)
-
-            message = []
-            return_dict = {}
 
             if not service_instance:
                 print("could not connect ot the host with given credentials")
