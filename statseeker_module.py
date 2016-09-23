@@ -123,7 +123,10 @@ class auto_iso_gen(base.statseeker_base):
 
             return_dict["success"] = "False"
             meta_dict = meta.meta_header()
-            return_dict["error"] = e.msg
+            if hasattr(e, "msg"):
+                return_dict["error"] = e.msg
+            else:
+                return_dict["error"] = str(e)
             return_dict["meta"] = meta_dict.main()
             return_dict["message"] = message
             return json.dumps(return_dict)
@@ -162,13 +165,13 @@ class licence(base.statseeker_base):
         cgi_bin = "/cgi/wwwc08"
         key_server = "http://key-server.statseeker.com"
 
-        self.client = paramiko.SSHClient()
+        client = paramiko.SSHClient()
 
         try:
-            self.client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-            self.client.connect(self.ip, username=self.user, password=self.password)
-            self.client.exec_command(". ~/.profile")
-            (stdin, stdout, stderr) = self.client.exec_command("/usr/local/statseeker/ss/bin/lic-check -H")
+            client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+            client.connect(self.ip, username=self.user, password=self.password)
+            client.exec_command(". ~/.profile")
+            (stdin, stdout, stderr) = client.exec_command("/usr/local/statseeker/ss/bin/lic-check -H")
             hardware_id = stdout.read()
             query_string = "server_id=" + self.server_id + "&hardware_id=" + hardware_id + "&referurl=" + ss_url
 
@@ -183,18 +186,21 @@ class licence(base.statseeker_base):
                 raise ERROR_exception("failed to aquire the license key")
             
             message.append("Adding server_id to base.cfg")
-            self.client.exec_command("/usr/local/statseeker/ss/bin/base-cfg -s /home/statseeker/base/etc/base.cfg server_number " + self.server_id)
+            client.exec_command("/usr/local/statseeker/ss/bin/base-cfg -s /home/statseeker/base/etc/base.cfg server_number " + self.server_id)
             message.append("Adding licence")
-            self.client.exec_command("/usr/local/statseeker/ss/bin/lic-check -i" + "\"" + LICENCE +"\"")
+            client.exec_command("/usr/local/statseeker/ss/bin/lic-check -i" + "\"" + LICENCE +"\"")
 
-            self.client.close()
+            client.close()
 
         except(paramiko.BadHostKeyException, paramiko.AuthenticationException, 
                 paramiko.SSHException, socket.error, ERROR_exception) as e:
 
             return_dict["success"] = "False"
             meta_dict = meta.meta_header()
-            return_dict["error"] = str(e)
+            if hasattr(e, "msg"):
+                return_dict["error"] = e.msg
+            else:
+                return_dict["error"] = str(e)
             return_dict["meta"] = meta_dict.main()
             return_dict["message"] = message
             return json.dumps(return_dict)
@@ -206,4 +212,115 @@ class licence(base.statseeker_base):
             return_dict["message"] = message
             return_dict["meta"] = meta_dict.main()
             return json.dumps(return_dict)
+
+
+
+#
+# add_scan_range: this module add ip scan ranges to a statseeker box
+#
+class add_scan_range(base.statseeker_base):
+    description = "This module add ip scan ranges to a statseeker box"
+
+    def __init__(self, host, user, password, *ranges):
+        super(add_scan_range, self).__init__("add_scan_range", "5.x")
+        self.host = host
+        self.user = user
+        self.password = password
+        self.ranges = ranges
+
+    def main(self):
+        return_dict = {}
+        message = []
+
+        client = paramiko.SSHClient()
+        try:
+            client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+            client.connect(self.host, username=self.user, password=self.password)
+
+            sftp = client.open_sftp()
+
+            with sftp.open("/home/statseeker/nim/etc/ping-discover-ranges.cfg", "a") as f:
+
+                for ip_range in self.ranges:
+                    f.write("include " + ip_range + "\n")
+                    message.append("include " + ip_range) 
+
+            client.close()
+
+        except(paramiko.BadHostKeyException, paramiko.AuthenticationException, 
+                paramiko.SSHException, socket.error, ERROR_exception) as e:
+
+            return_dict["success"] = "False"
+            meta_dict = meta.meta_header()
+            if hasattr(e, "msg"):
+                return_dict["error"] = e.msg
+            else:
+                return_dict["error"] = str(e)
+            return_dict["meta"] = meta_dict.main()
+            return_dict["message"] = message
+            return json.dumps(return_dict)
+
+        else:
+
+            return_dict["success"] = "True"
+            meta_dict = meta.meta_header()
+            return_dict["message"] = message
+            return_dict["meta"] = meta_dict.main()
+            return json.dumps(return_dict)
+
+
+
+#
+# add_community: this module add new communities to a statseeker box
+#
+class add_community(base.statseeker_base):
+    description = "This module add new communities to a statseeker box"
+
+    def __init__(self, host, user, password, *communities):
+        super(add_community, self).__init__("add_scan_range", "5.x")
+        self.host = host
+        self.user = user
+        self.password = password
+        self.communities = communities
+
+    def main(self):
+        return_dict = {}
+        message = []
+
+        client = paramiko.SSHClient()
+        try:
+            client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+            client.connect(self.host, username=self.user, password=self.password)
+
+            sftp = client.open_sftp()
+
+            with sftp.open("/home/statseeker/nim/etc/community.cfg", "a") as f:
+
+                for community in self.communities:
+                    f.write(community + "\n")
+                    message.append("added " + community) 
+
+            client.close()
+
+        except(paramiko.BadHostKeyException, paramiko.AuthenticationException, 
+                paramiko.SSHException, socket.error, ERROR_exception) as e:
+
+            return_dict["success"] = "False"
+            meta_dict = meta.meta_header()
+            if hasattr(e, "msg"):
+                return_dict["error"] = e.msg
+            else:
+                return_dict["error"] = str(e)
+            return_dict["meta"] = meta_dict.main()
+            return_dict["message"] = message
+            return json.dumps(return_dict)
+
+        else:
+
+            return_dict["success"] = "True"
+            meta_dict = meta.meta_header()
+            return_dict["message"] = message
+            return_dict["meta"] = meta_dict.main()
+            return json.dumps(return_dict)
+
 
