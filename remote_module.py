@@ -99,11 +99,11 @@ class run_script(base.remote_base):
         self.interpreter = run_script.types[self.script_type]
 
     def main(self):
-        self.client = paramiko.SSHClient()
+        client = paramiko.SSHClient()
         try:
             # Connect to remote host
-            self.client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-            self.client.connect(self.ip, username=self.user, password=self.password, key_filename=self.key)
+            client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+            client.connect(self.ip, username=self.user, password=self.password, key_filename=self.key)
 
             # Setup sftp connection and transmit this script
             sftp = self.client.open_sftp()
@@ -112,16 +112,16 @@ class run_script(base.remote_base):
 
             # Run the script remotely and collect output
             # SSHClient.exec_command() returns the type (stdin, stdout, stderr)
-            (stdin, stdout, stderr) = self.client.exec_command(self.interpreter + " " + self.remote)
+            (stdin, stdout, stderr) = client.exec_command(self.interpreter + " " + self.remote)
             
             #removing the file on the remote host
-            self.client.exec_command("rm -rf " + self.remote) 
+            client.exec_command("rm -rf " + self.remote) 
             
             # Output analysis
             print stdout.read()
 
             #close the pipe
-            self.client.close()
+            client.close()
             return True
 
         except(paramiko.BadHostKeyException, paramiko.AuthenticationException, paramiko.SSHException, 
@@ -130,6 +130,71 @@ class run_script(base.remote_base):
             print e
             return False
 
+#
+# run_command module: run commands on a remote host
+#
+class run_command(base.remote_base):
+    description = 'run a commands on the remote host'
+
+    def __init__(self, host, user, password, *commands):
+        super(run_command, self).__init__("run_command", "n/a")
+        self.user = user
+        self.host = host
+        self.password = password
+        self.commands = commands
+
+    def main(self):
+        return_dict = {}
+        message = []
+        result = []
+
+        client = paramiko.SSHClient()
+        try:
+            # Connect to remote host
+            client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+            client.connect(self.host, username=self.user, password=self.password)
+
+            # load the ~/.profile before running commands nop, not for statseeker
+            pre_command = ". ~/.profile;"
+            
+            # execute the given list of commands
+            for command in self.commands:
+                message.append("running " + command)
+                command = pre_command + command
+                (stdin, stdout, stderr) = client.exec_command(command, get_pty=True)
+                error = stderr.read()
+                out_put = stdout.read()
+
+                if error or stdout.channel.recv_exit_status():
+                    raise ERROR_exception(error)
+                else:
+                    result.append(out_put)
+
+            #close the pipe
+            client.close()
+
+        except(paramiko.BadHostKeyException, paramiko.AuthenticationException, 
+                paramiko.SSHException, socket.error, ERROR_exception) as e:
+
+            return_dict["success"] = "False"
+            meta_dict = meta.meta_header()
+            if hasattr(e, "msg"):
+                return_dict["error"] = e.msg
+            else:
+                return_dict["error"] = str(e)
+            return_dict["meta"] = meta_dict.main()
+            return_dict["message"] = message
+            return_dict["result"] = result
+            return json.dumps(return_dict)
+
+        else:
+
+            return_dict["success"] = "True"
+            meta_dict = meta.meta_header()
+            return_dict["message"] = message
+            return_dict["result"] = result
+            return_dict["meta"] = meta_dict.main()
+            return json.dumps(return_dict)
 
 #
 # add_route module: add route to statseekerbox, toggle for wether adding it permanently
