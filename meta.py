@@ -22,7 +22,7 @@ class meta_header(object):
     def main(self):
         meta = {}
         meta["epoch"] = calendar.timegm(time.gmtime())
-        meta["time"] = time.strftime("%a, %d %b %Y %H:%M:%S +0000", time.gmtime())
+        meta["time"] = time.strftime("%a, %d %b %Y %H:%M:%S", time.gmtime())
         meta["tz"] = time.timezone / -(60*60)
 
         try:

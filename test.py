@@ -26,9 +26,12 @@ test_licence = statseeker_module.licence("10.2.26.155", "77284604-3779060166", "
 wait_for_ping = local_module.ping_test("10.2.26.155", "600")
 wait_for_ssh = remote_module.ssh_check("statseeker@10.2.26.155", "qa")
 test_add_route = remote_module.add_route("10.2.26.155", "qa", True, route="10.138.0.0/16", gateway="10.2.26.100")
-
+test_add_scan_range = statseeker_module.add_scan_range("10.2.26.155", "statseeker", "qa", "10.100.0.0/16", "10.120.0.0/16", "10.121.0.0/16")
+run_command = remote_module.run_command("10.2.26.155", "statseeker", "qa", "echo lala","nim-discover -R")
+test_add_scan_range = statseeker_module.add_scan_range("10.2.26.155", "statseeker", "qa", "10.100.0.0/16", "10.120.0.0/16", "10.121.0.0/16")
+test_add_community = statseeker_module.add_community("10.2.26.155", "statseeker", "qa", "public", "private", "lala")
 #print(test_poweroff.main())
-#print (test_get.main())
+print (test_get.main())
 #print (test_reboot.main())
 #print (list_datastore.main())
 #print (clone_vm.main())
@@ -45,8 +48,11 @@ test_add_route = remote_module.add_route("10.2.26.155", "qa", True, route="10.13
 #print(test_poweron.main())
 #print(wait_for_ssh.main())
 #print(wait_for_ping.main())
-print(test_licence.main())
+#print(test_licence.main())
 #print(test_add_route.main())
+#print test_add_scan_range.main()
+#print(run_command.main())
+#print(test_add_community.main())
 
 
 
