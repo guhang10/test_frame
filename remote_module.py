@@ -234,7 +234,7 @@ class upload_files(base.remote_base):
 class run_command(base.remote_base):
     description = 'run a commands on the remote host'
 
-    def __init__(self, host, user, password, *commands):
+    def __init__(self, host, user, password, commands):
         super(run_command, self).__init__("run_command", "n/a")
         self.user = user
         self.host = host
@@ -256,10 +256,24 @@ class run_command(base.remote_base):
             pre_command = ". ~/.profile;"
             
             # execute the given list of commands
-            for command in self.commands:
-                message.append("running " + command)
-                command = pre_command + command
-                (stdin, stdout, stderr) = client.exec_command(command, get_pty=True)
+            if isinstance(self.commands, (list,tuple)):
+
+                for command in self.commands:
+                    message.append("running " + command)
+                    command_app = pre_command + command
+                    (stdin, stdout, stderr) = client.exec_command(command_app, get_pty=True)
+                    error = stderr.read()
+                    out_put = stdout.read()
+
+                    if error or stdout.channel.recv_exit_status():
+                        raise ERROR_exception(error + " " + out_put)
+                    else:
+                        result.append(out_put)
+
+            elif isinstance(self.commands, basestring):
+                message.append("running " + self.commands)
+                command_app = pre_command + self.commands
+                (stdin, stdout, stderr) = client.exec_command(command_app, get_pty=True)
                 error = stderr.read()
                 out_put = stdout.read()
 
@@ -267,6 +281,9 @@ class run_command(base.remote_base):
                     raise ERROR_exception(error + " " + out_put)
                 else:
                     result.append(out_put)
+
+            else:
+                raise ERROR_exception("Input commands are given in invalid format")
 
             #close the pipe
             client.close()
@@ -281,6 +298,7 @@ class run_command(base.remote_base):
             else:
                 return_dict["error"] = str(e)
             return_dict["meta"] = meta_dict.main()
+            return_dict["result"] = result
             return_dict["message"] = message
             return json.dumps(return_dict)
 
@@ -288,9 +306,11 @@ class run_command(base.remote_base):
 
             return_dict["success"] = "True"
             meta_dict = meta.meta_header()
+            return_dict["result"] = result
             return_dict["message"] = message
             return_dict["meta"] = meta_dict.main()
             return json.dumps(return_dict)
+
 
 #
 # add_route module: add route to statseekerbox, toggle for wether adding it permanently
