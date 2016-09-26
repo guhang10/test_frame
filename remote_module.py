@@ -52,7 +52,7 @@ class ssh_check(base.remote_base):
             while True:
                 try:
                     client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-                    subprocess.call(["ssh-keygen", "-R", self.ip], stdout=devnull, stderr=devnull)
+                    subprocess.call(["ssh-keygen", "-R", self.host], stdout=devnull, stderr=devnull)
                     client.connect(self.host, username=self.user, password=self.password, 
                                    timeout=max_span, banner_timeout=max_span)
                     client.close()
