@@ -264,7 +264,7 @@ class run_command(base.remote_base):
                 out_put = stdout.read()
 
                 if error or stdout.channel.recv_exit_status():
-                    raise ERROR_exception(error)
+                    raise ERROR_exception(error + " " + out_put)
                 else:
                     result.append(out_put)
 
