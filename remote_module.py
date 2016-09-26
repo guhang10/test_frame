@@ -32,9 +32,10 @@ class ERROR_exception(Exception):
 class ssh_check(base.remote_base):
     description = "checking ssh connectivity to host"
 
-    def __init__(self, cred, password):
+    def __init__(self, host, user, password):
         super(ssh_check, self).__init__("ss_check", "n/a")
-        [self.user, self.ip] = cred.split("@")
+        self.host = host
+        self.user = user
         self.password = password
         
     def main(self):
@@ -52,7 +53,7 @@ class ssh_check(base.remote_base):
                 try:
                     client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
                     subprocess.call(["ssh-keygen", "-R", self.ip], stdout=devnull, stderr=devnull)
-                    client.connect(self.ip, username=self.user, password=self.password, 
+                    client.connect(self.host, username=self.user, password=self.password, 
                                    timeout=max_span, banner_timeout=max_span)
                     client.close()
                     
@@ -82,53 +83,150 @@ class ssh_check(base.remote_base):
 
 
 #
-# run_script module: upload, run and remove a script from local to remote host
+# upload_script module: upload, (run and remove) a script from local to remote host
 #
-class run_script(base.remote_base):
+class upload_script(base.remote_base):
     description = 'upload, run and remove a script from local to remote host'
 
     # Supported file types dictionary, expand when necessary
     types = {"py": "pyhon", "sh": "sh"}
 
-    def __init__(self, cred, password, key_file, local, remote):
-        super(run_script, self).__init__("run_script", "n/a")
+    def __init__(self, host, user, password, run, delete, local, remote):
+        super(upload_script, self).__init__("upload_script", "n/a")
         self.remote = remote
-        self.key = key_file
-        [self.user, self.ip] = cred.split("@")
+        self.local = local
+        self.run = run
+        self.delete = delete
+        self.host = host
+        self.user = user
         self.password = password
-        self.interpreter = run_script.types[self.script_type]
+        if self.run:
+            self.interpreter = run_script.types[self.script_type]
 
     def main(self):
+        message = []
+        return_dict = {}
         client = paramiko.SSHClient()
         try:
+            # Validate the local file
+            if not os.path.isfile(self.local):
+                raise ERROR_exception("The local file is not valid")
+
             # Connect to remote host
             client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-            client.connect(self.ip, username=self.user, password=self.password, key_filename=self.key)
+            client.connect(self.host, username=self.user, password=self.password)
 
             # Setup sftp connection and transmit this script
-            sftp = self.client.open_sftp()
+            sftp = client.open_sftp()
             sftp.put(self.local, self.remote) 
             sftp.close()
+            message.append("upladded " + self.local + " to " + self.remote)
 
             # Run the script remotely and collect output
             # SSHClient.exec_command() returns the type (stdin, stdout, stderr)
-            (stdin, stdout, stderr) = client.exec_command(self.interpreter + " " + self.remote)
-            
+            if self.run:
+                (stdin, stdout, stderr) = client.exec_command(self.interpreter + " " + self.remote)
+                error = stderr.read()
+                out_put = stdout.read()
+
+                if error or stdout.channel.recv_exit_status():
+                    raise ERROR_exception(error)
+                else:
+                    message.append(out_put)
+
             #removing the file on the remote host
-            client.exec_command("rm -rf " + self.remote) 
+            if self.delete:
+                client.exec_command("rm -rf " + self.remote) 
+                message.append("removed" + self.remote)
             
-            # Output analysis
-            print stdout.read()
+            #close the pipe
+            client.close()
+
+        except(paramiko.BadHostKeyException, paramiko.AuthenticationException, 
+                paramiko.SSHException, IOError, ERROR_exception) as e:
+            
+            return_dict["success"] = "False"
+            meta_dict = meta.meta_header()
+            if hasattr(e, "msg"):
+                return_dict["error"] = e.msg
+            else:
+                return_dict["error"] = str(e)
+            return_dict["meta"] = meta_dict.main()
+            return_dict["message"] = message
+            return json.dumps(return_dict)
+
+        else:
+            return_dict["success"] = "True"
+            meta_dict = meta.meta_header()
+            return_dict["message"] = message
+            return_dict["meta"] = meta_dict.main()
+            return json.dumps(return_dict)
+
+
+#
+# upload_files module: upload one or multiple files
+#
+class upload_files(base.remote_base):
+    description = 'upload one or multiple files'
+
+    def __init__(self, host, user, password, local_remote):
+        super(upload_files, self).__init__("upload_script", "n/a")
+        self.host = host
+        self.user = user
+        self.password = password
+        self.local_remote = local_remote
+
+    def main(self):
+        message = []
+        return_dict = {}
+        client = paramiko.SSHClient()
+
+        try:
+            # Validate input output paring
+            if len(self.local_remote["local"]) != len(self.local_remote["remote"]):
+                raise ERROR_exception("number of local files given doesn't match the remote locations")
+
+            # Validate the local file
+            for file in self.local_remote["local"]:
+                if not os.path.isfile(file):
+                    raise ERROR_exception("The local file " + file +  " is not valid")
+
+            # Connect to remote host
+            client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+            client.connect(self.host, username=self.user, password=self.password)
+
+            # Setup sftp connection and transmit this script
+            sftp = client.open_sftp()
+
+            for (local, remote) in zip(self.local_remote["local"], self.local_remote["remote"]):
+                sftp.put(local, remote) 
+                message.append("uploaded " + local + " to " + remote)
+
+            sftp.close()
 
             #close the pipe
             client.close()
-            return True
 
-        except(paramiko.BadHostKeyException, paramiko.AuthenticationException, paramiko.SSHException, 
-                socket.error, OSError) as e:
-            print "ssh connection failed"
-            print e
-            return False
+        except(paramiko.BadHostKeyException, paramiko.AuthenticationException, 
+                paramiko.SSHException, IOError, ERROR_exception) as e:
+            
+            return_dict["success"] = "False"
+            meta_dict = meta.meta_header()
+            if hasattr(e, "msg"):
+                return_dict["error"] = e.msg
+            else:
+                return_dict["error"] = str(e)
+            return_dict["meta"] = meta_dict.main()
+            return_dict["message"] = message
+            return json.dumps(return_dict)
+
+        else:
+            return_dict["success"] = "True"
+            meta_dict = meta.meta_header()
+            return_dict["message"] = message
+            return_dict["meta"] = meta_dict.main()
+            return json.dumps(return_dict)
+
 
 #
 # run_command module: run commands on a remote host
@@ -184,7 +282,6 @@ class run_command(base.remote_base):
                 return_dict["error"] = str(e)
             return_dict["meta"] = meta_dict.main()
             return_dict["message"] = message
-            return_dict["result"] = result
             return json.dumps(return_dict)
 
         else:
@@ -192,7 +289,6 @@ class run_command(base.remote_base):
             return_dict["success"] = "True"
             meta_dict = meta.meta_header()
             return_dict["message"] = message
-            return_dict["result"] = result
             return_dict["meta"] = meta_dict.main()
             return json.dumps(return_dict)
 
