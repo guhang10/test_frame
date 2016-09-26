@@ -49,6 +49,10 @@ class auto_iso_gen(base.statseeker_base):
         devnull = open(os.devnull, 'w')
 
         try:
+            # test if this module is run as the root user
+            if os.geteuid() != 0:
+                raise ERROR_exception("root priviledge is needed to run this script")
+
             # test if the provided mod_config and iso images are valid files
             if not os.path.isfile(self.mod_config):
                 raise ERROR_exception("the provided installerconfig does not exist!")
@@ -170,7 +174,6 @@ class licence(base.statseeker_base):
         try:
             client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
             client.connect(self.ip, username=self.user, password=self.password)
-            client.exec_command(". ~/.profile")
             (stdin, stdout, stderr) = client.exec_command("/usr/local/statseeker/ss/bin/lic-check -H")
             hardware_id = stdout.read()
             query_string = "server_id=" + self.server_id + "&hardware_id=" + hardware_id + "&referurl=" + ss_url
