@@ -199,7 +199,7 @@ class licence(base.statseeker_base):
             if stdout.channel.recv_exit_status():
                 raise ERROR_exception("invalid license")
             else:
-                pass
+                message.append("license is valid")
 
             client.close()
 
