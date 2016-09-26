@@ -193,6 +193,14 @@ class licence(base.statseeker_base):
             message.append("Adding licence")
             client.exec_command("/usr/local/statseeker/ss/bin/lic-check -i" + "\"" + LICENCE +"\"")
 
+            message.append("licence checking")
+            (stdin, stdout, stderr) = client.exec_command("/usr/local/statseeker/ss/bin/lic-check")
+            
+            if stdout.channel.recv_exit_status():
+                raise ERROR_exception("invalid license")
+            else:
+                pass
+
             client.close()
 
         except(paramiko.BadHostKeyException, paramiko.AuthenticationException, 
