@@ -9,8 +9,11 @@ from subprocess import check_output
 import paramiko
 import socket
 import errno
-from HTMLParser import HTMLParser
 import re
+import sys
+import random
+import re
+
 
 #
 # Custom exception
@@ -288,7 +291,7 @@ class add_community(base.statseeker_base):
     description = "This module add new communities to a statseeker box"
 
     def __init__(self, host, user, password, *communities):
-        super(add_community, self).__init__("add_scan_range", "5.x")
+        super(add_community, self).__init__("add_community", "5.x")
         self.host = host
         self.user = user
         self.password = password
@@ -334,4 +337,94 @@ class add_community(base.statseeker_base):
             return_dict["meta"] = meta_dict.main()
             return json.dumps(return_dict)
 
+
+
+#
+# run_api_command module: run api command, this is quite similar to remote_mdoule.run_command, except that the 
+# success field is not only determined by the exit signal but the success field of the returned result, the input
+# format is also changed to one or a list of python dictionaries 
+#
+class run_api_command(base.statseeker_base):
+    description = 'run a api commands on the a remote statseeker box'
+
+    def __init__(self, host, user, password, commands):
+        super(run_api_command, self).__init__("run_api_command", "> 4.x")
+        self.user = user
+        self.host = host
+        self.password = password
+        self.commands = commands
+
+    def main(self):
+        return_dict = {}
+        message = []
+        result = []
+
+        client = paramiko.SSHClient()
+        try:
+            # Connect to remote host
+            client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+            client.connect(self.host, username=self.user, password=self.password)
+
+            # load the ~/.profile before running commands nop, not for statseeker
+            pre_command = ". ~/.profile;"
+            
+            # execute the given list of commands
+            if isinstance(self.commands, (list,tuple)):
+
+                for item in self.commands:
+                    command = "nim-api " + "\'" + json.dumps(item) + "\'"
+                    message.append("running: " + command)
+                    command_app = pre_command + command
+                    (stdin, stdout, stderr) = client.exec_command(command_app, get_pty=True)
+                    error = stderr.read()
+                    out_put = stdout.read()
+                    success = json.loads(out_put)["success"]
+
+                    if error or stdout.channel.recv_exit_status() or not success:
+                        raise ERROR_exception(error + out_put)
+                    else:
+                        result.append(out_put)
+
+            elif isinstance(self.commands, dict):
+                command = "nim-api " + "\'" + json.dumps(self.commands) + "\'"
+                message.append("running " + command)
+                command_app = pre_command + command
+                (stdin, stdout, stderr) = client.exec_command(command_app, get_pty=True)
+                error = stderr.read()
+                out_put = stdout.read()
+                success = json.loads(out_put)["success"]
+
+                if error or stdout.channel.recv_exit_status() or not success:
+                    raise ERROR_exception(error + out_put)
+                else:
+                    result.append(out_put)
+
+            else:
+                raise ERROR_exception("Input commands are given in invalid format")
+
+            #close the pipe
+            client.close()
+
+        except(paramiko.BadHostKeyException, paramiko.AuthenticationException, 
+                paramiko.SSHException, socket.error, ERROR_exception) as e:
+
+            return_dict["success"] = "False"
+            meta_dict = meta.meta_header()
+            if hasattr(e, "msg"):
+                return_dict["error"] = e.msg
+            else:
+                return_dict["error"] = str(e)
+            return_dict["meta"] = meta_dict.main()
+            return_dict["result"] = result
+            return_dict["message"] = message
+            return json.dumps(return_dict)
+
+        else:
+
+            return_dict["success"] = "True"
+            meta_dict = meta.meta_header()
+            return_dict["result"] = result
+            return_dict["message"] = message
+            return_dict["meta"] = meta_dict.main()
+            return json.dumps(return_dict)
 
