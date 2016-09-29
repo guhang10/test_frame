@@ -1724,12 +1724,9 @@ class vmware_datastore_upload(base.vmware_base):
         self.datastore = datastore
         self.remote_file = remote_file
 
-    
     def main(self):
         message = []
         return_dict = {}
-
-           
 
         try:
             # File validation
@@ -1769,9 +1766,11 @@ class vmware_datastore_upload(base.vmware_base):
                     if ds.info.name == self.datastore:
                         datacenter = dc
                         datastore = ds
+
             if not datacenter or not datastore:
                 print("Could not find the datastore specified")
                 raise SystemExit(-1)
+
             # Clean up the views now that we have what we need
             datastores_object_view.Destroy()
             datacenters_object_view.Destroy()
@@ -1805,6 +1804,8 @@ class vmware_datastore_upload(base.vmware_base):
 
             # Get the file to upload ready, extra protection by using with against
             # leaving open threads
+            message.append("uploading " + self.local_file + " to " + self.datastore + " on " + self.host)
+
             with open(self.local_file, "rb") as f:
                 # Connect and upload the file
                 
