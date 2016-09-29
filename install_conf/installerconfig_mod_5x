@@ -359,7 +359,7 @@ ha_info ()
 }
 
 
-# Determine
+# Determine whether the automation installer config is present
 check_auto_install ()
 {
 	if [ -f /etc/auto_install_config ] && [ -s /etc/auto_install_config ]; then
@@ -490,12 +490,12 @@ stripe/mirror RAID setup. As the Statseeker databases grow in
 size, data loss WILL occur in a RAID 5 & 6 setup.'
 
 if [ $AUTO_INSTALL -ne 1 ]; then
-	dialog --title "Welcome to Statseeker" \
-	       --yes-label "Continue Install" \
-	       --no-label "Reboot" \
-	       --yesno "${message}" 20 70
+   dialog --title "Welcome to Statseeker" \
+	  --yes-label "Continue Install" \
+	  --no-label "Reboot" \
+	  --yesno "${message}" 20 70
 else
-	return_answer 0
+   return_answer 0
 fi
 
 if [ $? -ne 0 ]; then
@@ -554,11 +554,7 @@ done
 # Check that at least one disk was found
 #
 if [ $CNT -eq 0 ]; then
-	if [ $AUTO_INSTALL -ne 1 ]; then
-		dialog --msgbox "\n      !!! Could not find a valid disk for Statseeker install !!!" 7 75
-	else
-		echo "\n      !!! Could not find a valid disk for Statseeker install !!!"
-	fi
+   dialog --msgbox "\n      !!! Could not find a valid disk for Statseeker install !!!" 7 75
    abort
 fi
 
@@ -579,13 +575,13 @@ fi
 if [ ${CNT} -gt 1 ]; then
    exec 3>&1
 	if [ $AUTO_INSTALL -ne 1 ]; then
-		disk_dev=`echo "${disk_list}" | xargs dialog \
-			--backtitle 'FreeBSD Installer' \
-			--title 'Installation Disk Selection' \
-			--menu 'Choose the disk where you would like Statseeker installed:' \
-			0 0 0 2>&1 1>&3`
+	   disk_dev=`echo "${disk_list}" | xargs dialog \
+		     --backtitle 'FreeBSD Installer' \
+		     --title 'Installation Disk Selection' \
+	             --menu 'Choose the disk where you would like Statseeker installed:' \
+		     0 0 0 2>&1 1>&3`
 	else
-		disk_dev=`echo "${disk_list}" | head -n1 | cut -d " " -f1`
+	   disk_dev=`echo "${disk_list}" | head -n1 | cut -d " " -f1`
 	fi
    [ $? -eq 1 ] && abort
    exec 3>&-
@@ -608,12 +604,12 @@ if [ $disk_size -lt $check_size ]; then
    GB_disk_size=$(($disk_size/2/1024/1024))
    GB_check_size=$(($check_size/2/1024/1024))
 
-	if [ $AUTO_INSTALL -ne 1 ]; then
-		dialog --msgbox " !!! You must have at least $GB_check_size GB of storage to install statseeker !!!  \n\nYou only have $GB_disk_size GB of storage. \n\nPlease increase your storage size." 10 75
-	else
-		echo " !!! You must have at least $GB_check_size GB of storage to install statseeker !!!  \n\nYou only have $GB_disk_size GB of storage. \n\nPlease increase your storage size." 
-	fi
-	abort
+   if [ $AUTO_INSTALL -ne 1 ]; then
+      dialog --msgbox " !!! You must have at least $GB_check_size GB of storage to install statseeker !!!  \n\nYou only have $GB_disk_size GB of storage. \n\nPlease increase your storage size." 10 75
+      else
+	 echo " !!! You must have at least $GB_check_size GB of storage to install statseeker !!!  \n\nYou only have $GB_disk_size GB of storage. \n\nPlease increase your storage size." 
+   fi
+   abort
 fi
 
 #
@@ -731,11 +727,11 @@ if [ $do_partition -eq 1 ]; then
          ssversion=`cat /mnt/${ssfile}`
 
          # Prompt the user to retain network config
-			if [ $AUTO_INSTALL -ne 1 ]; then
-				#dialog --yesno "                       !!! IMPORTANT !!!\nPlease ensure you have a valid backup before Upgrading Statseeker.\nIf you are upgrading and do not have a valid backup please power\noff the server now.\n\nDANGER This Statseeker upgrade requires changes to hard disk partitions. All data on the hard disk will be destroyed.\nWould you like to retain your existing system network configuration before upgrading?\n\n" 13 70
-			else
-				return_answer $auto_retain_network
-			fi
+         if [ $AUTO_INSTALL -ne 1 ]; then
+	    dialog --yesno "                       !!! IMPORTANT !!!\nPlease ensure you have a valid backup before Upgrading Statseeker.\nIf you are upgrading and do not have a valid backup please power\noff the server now.\n\nDANGER This Statseeker upgrade requires changes to hard disk partitions. All data on the hard disk will be destroyed.\nWould you like to retain your existing system network configuration before upgrading?\n\n" 13 70
+         else
+	    return_answer $auto_retain_network
+	 fi
 
          if [ $? -eq 0 ]; then
             checkversion $ssversion 5.0.0
@@ -777,11 +773,11 @@ if [ $do_partition -eq 0 ]; then
       ssversion=`cat /mnt/${ssfile}`
 
       # Prompt the user to retain their data
-		if [ $AUTO_INSTALL -ne 1 ]; then
-			dialog --yesno "                       !!! IMPORTANT !!!\nPlease ensure you have a valid backup before Upgrading Statseeker.\nIf you are upgrading and do not have a valid backup please power\noff the server now.\n\nThis disk contains an existing Statseeker installation:\n v${ssversion}\n\nWould you like to keep the existing configuration and data?" 13 70
-		else
-			return_answer $auto_retain_data
-		fi
+      if [ $AUTO_INSTALL -ne 1 ]; then
+         dialog --yesno "                       !!! IMPORTANT !!!\nPlease ensure you have a valid backup before Upgrading Statseeker.\nIf you are upgrading and do not have a valid backup please power\noff the server now.\n\nThis disk contains an existing Statseeker installation:\n v${ssversion}\n\nWould you like to keep the existing configuration and data?" 13 70
+      else
+         return_answer $auto_retain_data
+      fi
 
       if [ $? -eq 0 ]; then
          do_partition=0
@@ -806,13 +802,13 @@ fi
 #
 if [ $do_partition -eq 1 ]; then
 	
-	if [ $AUTO_INSTALL -ne 1 ]; then
-		dialog --yesno "                 DANGER\n\nAll data on the hard disk will be destroyed.\n\n         Do you wish to continue ?\n" 10 50 || abort
+   if [ $AUTO_INSTALL -ne 1 ]; then
+      dialog --yesno "                 DANGER\n\nAll data on the hard disk will be destroyed.\n\n         Do you wish to continue ?\n" 10 50 || abort
 
-		dialog --infobox "Partitioning hard disk" 3 70
-	else
-		echo "Partitioning hard disk"
-	fi
+   dialog --infobox "Partitioning hard disk" 3 70
+   else
+      echo "Partitioning hard disk"
+   fi
 
    #
    # Wipe the first meg of data off the disk. This will get rid
@@ -1367,19 +1363,11 @@ gpart unset -a 'bootme' -i ${os_oth_index} ${disk_dev} >> ${logfile} || abort
 #
 # Create newfs partitions
 #
-if [ $AUTO_INSTALL -ne 1 ]; then
-	dialog --infobox "Creating / filesystem..." 3 70
-else:
-	echo "Creating / filesystem..."
-fi
+dialog --infobox "Creating / filesystem..." 3 70
 newfs "${label_dir}/${os_new}" >> ${logfile} || abort
 
 if [ $do_partition -eq 1 ]; then
-	if [ $AUTO_INSTALL -ne 1 ]; then
-		dialog --infobox "Creating /home filesystem..." 3 70
-	else
-		echo "Creating /home filesystem..."
-	fi
+   dialog --infobox "Creating /home filesystem..." 3 70
    newfs $home_newfs_opts "${label_dir}/${data_label}" >> ${logfile} || abort
 fi
 
@@ -1489,17 +1477,9 @@ fi
 #
 # Install the base and kernel distributions
 #
-if [ $AUTO_INSTALL -ne 1 ]; then
-	dialog --infobox "Installing operating system files. Please wait...." 3 70
-else
-	echo "Installing operating system files. Please wait...."
-fi
+dialog --infobox "Installing operating system files. Please wait...." 3 70
 tar -xf /usr/freebsd-dist/base.txz -C /mnt || abort
-if [ $AUTO_INSTALL -ne 1 ]; then
-	dialog --infobox "Installing kernel. Please wait...." 3 70
-else
-	echo "Installing kernel. Please wait...."
-fi
+dialog --infobox "Installing kernel. Please wait...." 3 70
 tar -xf /usr/freebsd-dist/kernel.txz -C /mnt || abort
 
 
@@ -1508,16 +1488,16 @@ tar -xf /usr/freebsd-dist/kernel.txz -C /mnt || abort
 #
 
 if [ $AUTO_INSTALL -ne 1 ]; then
-	bsdinstall time
-	bsdinstall rootpass
+   bsdinstall time
+   bsdinstall rootpass
 fi
 
 if [ ! -f "${ss_tmp}/etc/rc.conf" -a $USE_HA -eq 0 ]; then
 	
-	if [ $AUTO_INSTALL -ne 1 ]; then
-		bsdinstall netconfig 2
-		bsdinstall hostname
-	fi
+   if [ $AUTO_INSTALL -ne 1 ]; then
+      bsdinstall netconfig 2
+      bsdinstall hostname
+   fi
    _DOMAIN=""
    while read key value; do
    case "${key}" in
@@ -1534,15 +1514,15 @@ if [ ! -f "${ss_tmp}/etc/rc.conf" -a $USE_HA -eq 0 ]; then
       echo "search $_HOST_DOMAIN" >> ${BSDINSTALL_TMPETC}/resolv.conf
    fi
 
-	if [ $AUTO_INSTALL -ne 1 ]; then
-		bsdinstall netconfig 1
-	fi
+   if [ $AUTO_INSTALL -ne 1 ]; then
+      bsdinstall netconfig 1
+   fi
 fi
 
 if [ $AUTO_INSTALL -ne 1 ]; then
-	dialog --infobox "Saving system configuration..."
+   dialog --infobox "Saving system configuration..."
 else
-	echo "Saving system configuration..."
+   echo "Saving system configuration..."
 fi
 
 #?
@@ -1563,32 +1543,39 @@ fi
 # for auto_install, insert network configs directly into rc.conf
 #
 if [ $AUTO_INSTALL -ne 0 ]; then
-	PARTITIONS=ada0
-	DISTRIBUTIONS="kernel.txz base.txz"
+   PARTITIONS=ada0
+   DISTRIBUTIONS="kernel.txz base.txz"
 
-	#!/bin/sh
-	# insert entries to rc.conf
-	echo "hostname=\""$auto_hostname"\"" >> /mnt/etc/rc.conf
-	echo "ifconfig_"$auto_interface"=\"inet" $auto_ip_address "netmask" $auto_netmask"\"" >> /mnt/etc/rc.conf
-	echo "sshd_enable=YES" >> /mnt/etc/rc.conf
-	echo "defaultrouter=\""$auto_default_router"\"" >> /mnt/etc/rc.conf
-	# insert entires to hosts file
-	rm /mnt/etc/hosts
+   #!/bin/sh
+   # insert entries to rc.conf
+   echo "hostname=\""$auto_hostname"\"" >> /mnt/etc/rc.conf
+   echo "ifconfig_"$auto_interface"=\"inet" $auto_ip_address "netmask" $auto_netmask"\"" >> /mnt/etc/rc.conf
+   echo "sshd_enable=YES" >> /mnt/etc/rc.conf
+   echo "defaultrouter=\""$auto_default_router"\"" >> /mnt/etc/rc.conf
+   # insert entires to hosts file
+   rm /mnt/etc/hosts
    echo "::1	      localhost localhost."`echo $auto_hostname | awk '{split($0,a,"."); print a[2] "." a[3]}'` >> /mnt/etc/hosts
    echo "127.0.0.1	localhost localhost."`echo $auto_hostname | awk '{split($0,a,"."); print a[2] "." a[3]}'` >> /mnt/etc/hosts
    echo $auto_ip_address    $auto_hostname  `echo $auto_hostname | awk '{split($0,a,"."); print a[1]}'` >> /mnt/etc/hosts
    echo $auto_ip_address    $auto_hostname >> /mnt/etc/hosts
 
-	#insert entries into resolv.conf
-	echo "search" $auto_domain >> /mnt/etc/resolv.conf
-	echo "nameserver" $auto_dns >> /mnt/etc/resolv.conf
+   #insert entries into resolv.conf
+   echo "search" $auto_domain >> /mnt/etc/resolv.conf
+   echo "nameserver" $auto_dns >> /mnt/etc/resolv.conf
 
-	# change root password
-	chroot ${mnt_dir} chpass -p $auto_password root
+   # change root password
+   chroot ${mnt_dir} chpass -p $auto_password root
 
-	# enable ssh as root user
-	echo "PermitRootLogin yes" >> /mnt/etc/ssh/sshd_config
+   # enable ssh as root user
+   echo "PermitRootLogin yes" >> /mnt/etc/ssh/sshd_config
 fi
+
+#
+# for auto_install, insert time zone file as well
+#
+zoneinfo=`find /usr/share/zoneinfo -name $auto_timezone`
+cp $zoneinfo /mnt/etc/localtime
+
 
 #
 # Write HA Config
@@ -1606,11 +1593,7 @@ fi
 # Copy over FreeBSD distribution files
 #
 
-if [ $AUTO_INSTALL -ne 1 ]; then
-	dialog --infobox "Copying FreeBSD distribution files..." 3 70
-else
-	echo "Copying FreeBSD distribution files..."
-fi
+dialog --infobox "Copying FreeBSD distribution files..." 3 70
 mkdir -p /mnt/${ROOT_DIR}/freebsd-dist
 cp /usr/freebsd-dist/*.txz /mnt/${ROOT_DIR}/freebsd-dist
 
@@ -1619,11 +1602,7 @@ cp /usr/freebsd-dist/*.txz /mnt/${ROOT_DIR}/freebsd-dist
 # Copy the CDROM package repository to Statseeker's package directory
 #
 
-if [ $AUTO_INSTALL -ne 1 ]; then
-	dialog --infobox "Creating package repository..." 3 70
-else
-	echo "Creating package repository..." 
-fi
+dialog --infobox "Creating package repository..." 3 70
 cp -r /packages /mnt/${pkg_dir}
 rm /mnt/${pkg_dir}/TRANS.TBL
 
