@@ -1,0 +1,777 @@
+#!/bin/sh
+
+#
+# Copyright (C) 2015  Statseeker Holdings Pty Ltd  ACN 103 346 514
+# All Rights Reserved
+# CONFIDENTIAL - UNAUTHORISED USE PROHIBITED
+#
+
+#
+# This is the main cdrom install script. It is called by rc.local on startup.
+# If this script succeeds, rc.local will eject the cdrom and reboot the machine.
+# If this script fails for any reason, rc.local will launch a debugger showing
+# all output from this script AND all 'bsdinstall' scripts.
+#
+# Debugging info should ONLY be displayed in the case of system or coding errors.
+# If the script exits through 'abort', no debugging information will be displayed.
+#
+abort ()
+{
+   echo "Installation failed - contact Statseeker support"
+   echo "Type 'alt+F2' to view log messages."
+   echo "Type 'shutdown -p now' to power down"
+   echo "Statseeker install aborted. Type 'shutdown -p now' to power down." >> ${logfile}
+   exit 1;
+}
+
+checkversion ()
+{
+   # Decode the version allready installed on the disc and the new version to be installed
+   DISCVERSION=$(echo $1 | awk -F'[^0-9]' '{for (i = 1; i <= NF; i = i + 1) {print $i}}')
+   NEWVERSION=$(echo $2 | awk -F'[^0-9]' '{for (i = 1; i <= NF; i = i + 1) {print $i}}')
+   ERRORMSG="A newer version of Statseeker already exists on this machine ($1 > $2)"
+
+   # Check that currently installed version has valid format
+   if [ $(echo $DISCVERSION | wc -w) -lt 3 ]; then
+      echo "Invalid version installed on disc."
+      abort
+   fi
+
+   # Check that version being installed has valid format
+   if [ $(echo $NEWVERSION | wc -w) -lt 3 ]; then
+      echo "Invalid version of Statseeker being installed."
+      abort
+   fi
+
+   # Check that installed version isn't newer than the version being installed
+   set -- $DISCVERSION
+   for NEW in $NEWVERSION
+   do
+      [ -z "$1" ] && CUR=0 || CUR=$1
+      [ $NEW -gt $CUR ] && return 0
+      [ $NEW -lt $CUR ] && { echo $ERRORMSG; abort; }
+      shift
+   done
+
+   while ! [ -z "$1" ]
+   do
+      [ $1 -gt 0 ] && { echo $ERRORMSG; abort; }
+      shift
+   done
+
+   # Versions are equal
+   return 0
+}
+
+checklicence ()
+{
+   # This is an upgrade (Only check license if version is less than 3.8.0)
+   DISKVERSION=$(echo $1 | awk -F'[^0-9]' '{for (i = 1; i <= NF; i = i + 1) {print $i}}')
+   # Decode the version of Statseeker that is already installed on this disk
+   set -- $DISKVERSION
+
+   MAJOR_VERSION=$1
+   MINOR_VERSION=$2
+
+   if [ \( $MAJOR_VERSION -eq 3 \) -a \( $MINOR_VERSION -le 7 \) ]; then
+      if [ -f "/mnt/home/statseeker/.licence" ]; then
+         eval `stat -s /mnt/statseeker/.licence`
+         LIC_MTIME=$st_mtime
+         eval `stat -s /mnt/statseeker/nim/etc/discover/maxoid`
+         DISCOVER_MTIME=$st_mtime
+
+         # Check if last discovery is later than when the licence was installed.
+         if [ $DISCOVER_MTIME -gt $LIC_MTIME ]; then
+            dialog --yesno "                       WARNING\n\nA discovery has run after the installation of the license\nfor 3.8. This may mean due to license restrictions,\npolling may be disabled for devices and interfaces after\ncompleting this upgrade.\n\n\nDo you want to continue?" 13 61
+            if [ $? -ne 0 ]; then
+               abort
+            fi
+         fi
+      else
+         echo "FATAL: Upgrading without a license is not permitted"
+         abort
+      fi
+   fi
+}
+
+
+checkhyperthreading ()
+{
+   sysctl -a | grep -q hyperthreading || return 0
+
+   message='
+                      HARDWARE / ENVIRONMENT
+
+   Detected this machine has hyper-threading enabled. This will
+   have a negative impact on system performance. Please disable
+   hyper-threading in your BIOS settings before installing
+   Statseeker.'
+
+   dialog --title "Aborting Statseeker install" --ok-label "Reboot" --msgbox "${message}" 12 70
+   reboot
+   exit 0
+}
+
+# Determine whether the automation install config is present
+check_auto_install ()
+{
+   if [ -f /etc/auto_install_config ] && [ -s /etc/auto_install_config ]; then
+      return 1
+   else
+      return 0
+   fi
+}
+
+return_answer ()
+{
+   return $1
+}
+
+
+
+#
+# Set variables for install
+#
+
+# Set variables for auto_install
+check_auto_install
+AUTO_INSTALL=$?
+
+if [ $AUTO_INSTALL -eq 1 ]; then
+   IFS="="
+   while read -r name value
+   do
+      eval $name=\$value
+      done < /etc/auto_install_config
+      IFS=$' \t\n'
+fi
+
+# Statseeker root directory
+ROOT_DIR=/usr/local/statseeker
+
+# Statseeker package directory
+pkg_dir=/usr/local/statseeker/packages
+
+# Location of log file to record advanced output and errors
+logfile='/tmp/bsdinstall_log'
+echo "Starting Statseeker Installation" >> ${logfile}
+exec 2>>${logfile}
+
+# Configuration files to keep from previous Statseeker installs
+# Make sure directories are included first
+keep_conf='/etc
+/etc/rc.conf
+/etc/ntp.conf
+/etc/resolv.conf
+/etc/hosts
+/boot
+/boot/loader.conf
+/home/statseeker/.ssh
+/home/statseeker/.ssh/id_rsa
+/home/statseeker/.ssh/id_rsa.pub'
+
+old_fstab='/etc/fstab'
+
+# Temporary directory to save $keep_conf files
+ss_tmp='/tmp/ss_configuration'
+
+# Statseeker version file
+ssfile="/home/statseeker/.ssversion"
+
+
+#
+# Give users a warning if hyperthreading is enabled
+#
+checkhyperthreading
+
+
+#
+# Display a message to the user
+#
+message='
+                      HARDWARE / ENVIRONMENT
+
+Network Connection:
+ Connect the server to a network segment with a single physical
+ or virtual router (eg. HSRP).
+
+It is not recommended to install on:
+ - SAN
+ - RAID 5 or 6
+
+ RAID 5 & 6 are designed for low volume file/print servers, not
+ for high volume database applications. The read/write performance
+ of parity RAID is up to 15 times slower than a single disk or a
+ stripe/mirror RAID setup. As the Statseeker databases grow in
+ size, data loss WILL occur in a RAID 5 & 6 setup.'
+
+if [ $AUTO_INSTALL -ne 1 ]; then
+   dialog --title "Welcome to Statseeker" \
+	  --yes-label "Continue Install" \
+	  --no-label "Reboot" \
+	  --yesno "${message}" 20 70
+else
+   return_answer 0
+fi
+
+if [ $? -ne 0 ]; then
+   reboot
+   exit 0
+fi
+
+
+#
+# Search avaliable disks for Statseeker install
+#
+CNT=0
+disk_list=''
+for disk in `/sbin/sysctl -n kern.disks`
+do
+   size=`diskinfo ${disk} | awk '{ print $4; }'`
+   [ -z "$size" ] && continue
+
+   size_gb=$(($size / 1024 / 1024 / 2))
+   [ "$size_gb" -eq 0 ] && continue
+
+   disk_dev=${disk}
+   disk_size=${size}
+   disk_list="${disk_list} ${disk} ${size_gb}G"
+   CNT=$((${CNT} + 1))
+done
+
+#
+# Check that at least one disk was found
+#
+if [ $CNT -eq 0 ]; then
+   dialog --msgbox "\n      !!! Could not find a valid disk for Statseeker install !!!" 7 75
+   abort
+fi
+
+#
+# Check for sufficient memory on the system.
+#
+min_physmem=1000000000
+physmem=`sysctl -n hw.physmem`
+if [ $physmem -lt $min_physmem ]; then
+   physmem_mb=$(($physmem / 1024 / 1024))
+   dialog --msgbox " !!! You must have at least 1 GB of memory to install statseeker !!!  \n\nYou only have $physmem_mb MB. \n\nPlease add more memory." 10 75
+   abort
+fi
+
+#
+# Ask the user which disk they want to use
+#
+if [ ${CNT} -gt 1 ]; then
+   exec 3>&1
+      if [ $AUTO_INSTALL -ne 1 ]; then
+         disk_dev=`echo "${disk_list}" | xargs dialog \
+		   --backtitle 'FreeBSD Installer' \
+		   --title 'Installation Disk Selection' \
+		   --menu 'Choose the disk where you would like Statseeker installed:' \
+		   0 0 0 2>&1 1>&3`
+      else
+	 disk_dev=`echo "${disk_list}" | head -n1 | cut -d " " -f1`
+	fi
+   [ $? -eq 1 ] && abort
+   exec 3>&-
+   disk_size=`diskinfo ${disk_dev} | awk '{ print $4; }'`
+fi
+
+#
+# Now check to see if there is less than 60 GB of storage on disk.
+#
+if [ $disk_size -lt 125829120 ]; then
+
+   GB_disk_size=$(($disk_size/2/1024/1024))
+
+   dialog --msgbox " !!! You must have at least 60 GB of storage to install statseeker !!!  \n\nYou only have $GB_disk_size GB of storage. \n\nPlease increase your storage size." 10 75
+   abort
+fi
+
+#
+# Define size of disk partitions: sizes are in 512 byte blocks
+#
+os_size=`echo "1024 * 1024 * 32" | bc`       # 16G
+# swap_size calculated below
+# data_size calculated below
+
+
+#
+# Calculate the size of swap partition based on memory and hard disk size:
+#  1. swap_size     := twice size of memory (bounded by min_swap_size, max_swap_size)
+#  2. min_swap_size := 4G
+#  3. max_swap_size := max( 4G, (2^n)/16 ) where n is the largest number such that 2^n <= disk_size
+#
+swap_size=`sysctl -n hw.physmem`             # memory in bytes
+swap_size=`echo "$swap_size * 2 / 512" | bc` # memory in 512byte blocks
+min_swap_size=$((1024 * 1024 * 8))           # 4G in 512byte blocks
+max_swap_size=$min_swap_size
+
+if [ $disk_size -gt $(($max_swap_size * 16)) ]; then
+   # Note: log2(min_swap_size * 16) == 27
+   CNT=27
+   TMP=$(($disk_size >> $CNT))
+   while [ $TMP -gt 1 ]; do
+      TMP=$(($TMP >> 1))
+      CNT=$(($CNT  + 1))
+   done
+   max_swap_size=$((1<<($CNT-4)))   # 2 to the power of: floor(log2(disk_size/16))
+fi
+
+if [ $swap_size -lt ${min_swap_size} ]; then
+   swap_size=${min_swap_size}
+elif [ $swap_size -gt ${max_swap_size} ]; then
+   swap_size=${max_swap_size}
+fi
+
+
+#
+# Define device labels for disk partitions
+#
+boot_label="boot"
+os1_label="os1"
+os2_label="os2"
+swap_label="swap"
+data_label="data"
+label_dir="/dev/gpt"
+label_list="${boot_label} ${os1_label} ${os2_label} ${swap_label} ${data_label}"
+
+
+#
+# If the partition structure needs to be updated, set do_partition=1
+# Otherwise set do_partition=0, allowing users the option to keep data
+#
+active=`gpart show -l ${disk_dev} | grep '\[bootme\]'`
+do_partition=1
+os_new=${os1_label}               # Partition to install new os
+os_oth=${os2_label}               # Partition to leave inactive
+
+if [ ! -z "${active}" ]; then
+
+   echo "${active}" | grep -qw "${os1_label}"
+   if [ $? -eq 0 ]; then
+      os_new=${os2_label}
+      os_oth=${os1_label}
+      do_partition=0
+   fi
+
+   echo "${active}" | grep -qw "${os2_label}" &&
+   do_partition=$((1-$do_partition))
+
+   for label in ${label_list}
+   do
+      [ -e "${label_dir}/${label}" ] || do_partition=1
+   done
+fi
+
+if [ ${do_partition} -eq 1 ]; then
+   os_new=${os1_label}
+   os_oth=${os2_label}
+fi
+
+
+#
+# This is for upgrading from Statseeker versions which predated this partition
+# structure. Keep this seperate, we need to make different assumptions about
+# disk & label names. Prompt the user whether to keep existing network config.
+#
+if [ $do_partition -eq 1 ]; then
+
+   old_root_partition=''
+   old_home_partition=''
+
+   [ -e "/dev/${disk_dev}s1a" ] && old_root_partition="/dev/${disk_dev}s1a"
+   [ -e "/dev/${disk_dev}p2"  ] && old_root_partition="/dev/${disk_dev}p2"
+   [ -e "/dev/${disk_dev}s1g" ] && old_home_partition="/dev/${disk_dev}s1g"
+   [ -e "/dev/${disk_dev}p7"  ] && old_home_partition="/dev/${disk_dev}p7"
+
+   if [ ! -z "$old_root_partition" -a ! -z "$old_home_partition" ]; then
+      root_mounted=0
+      home_mounted=0
+
+      mount -t ufs "${old_root_partition}" /mnt      && root_mounted=1 &&
+      mount -t ufs "${old_home_partition}" /mnt/home && home_mounted=1
+
+      if [ $? -eq 0 ] && [ -f "/mnt/${ssfile}" ]; then
+         ssversion=`cat /mnt/${ssfile}`
+
+         # Prompt the user to retain network config
+	 if [ $AUTO_INSTALL -ne 1 ]; then
+            dialog --yesno "                       !!! IMPORTANT !!!\nPlease ensure you have a valid backup before Upgrading Statseeker.\nIf you are upgrading and do not have a valid backup please power\noff the server now.\n\nDANGER This Statseeker upgrade requires changes to hard disk partitions. All data on the hard disk will be destroyed.\nWould you like to retain your existing system network configuration before upgrading?\n\n" 13 70
+	 else
+	    return_answer $auto_retain_network
+	 fi
+
+         if [ $? -eq 0 ]; then
+            checkversion $ssversion 4.0.3
+            checklicence $ssversion
+            mkdir -p ${ss_tmp}
+            for file in ${keep_conf}; do
+               [ -d "/mnt/${file}" ] && mkdir -p "${ss_tmp}/${file}"
+               [ -f "/mnt/${file}" ] && cp "/mnt/${file}" "${ss_tmp}/${file}"
+            done
+            # User fstab entries need to be re-added manually the after partition upgrade
+            #[ -f "/mnt/${old_fstab}" ] && cp "/mnt/${old_fstab}" "${ss_tmp}/${old_fstab}"
+         fi
+      fi
+
+      [ $home_mounted -eq 1 ] && umount /mnt/home
+      [ $root_mounted -eq 1 ] && umount /mnt
+   fi
+
+fi
+
+
+#
+# We don't need to upgrade the partition structure.
+# Prompt the user whether to keep existing data
+#
+if [ $do_partition -eq 0 ]; then
+   do_partition=1
+
+   old_root_partition="${label_dir}/${os_oth}"
+   old_home_partition="${label_dir}/${data_label}"
+
+   root_mounted=0
+   home_mounted=0
+
+   mount -t ufs "${old_root_partition}" /mnt      && root_mounted=1 &&
+   mount -t ufs "${old_home_partition}" /mnt/home && home_mounted=1
+
+   if [ $? -eq 0 ] && [ -f "/mnt/${ssfile}" ]; then
+      ssversion=`cat /mnt/${ssfile}`
+
+      # Prompt the user to retain their data
+      if [ $AUTO_INSTALL -ne 1]; then
+         dialog --yesno "                       !!! IMPORTANT !!!\nPlease ensure you have a valid backup before Upgrading Statseeker.\nIf you are upgrading and do not have a valid backup please power\noff the server now.\n\nThis disk contains an existing Statseeker installation:\n v${ssversion}\n\nWould you like to keep the existing configuration and data?" 13 70
+      else
+         return_answer $auto_retain_data
+      fi
+
+      if [ $? -eq 0 ]; then
+         do_partition=0
+         checkversion $ssversion 4.0.3
+         checklicence $ssversion
+         mkdir -p ${ss_tmp}
+         for file in ${keep_conf}; do
+            [ -d "/mnt/${file}" ] && mkdir -p "${ss_tmp}/${file}"
+            [ -f "/mnt/${file}" ] && cp "/mnt/${file}" "${ss_tmp}/${file}"
+         done
+         [ -f "/mnt/${old_fstab}" ] && cp "/mnt/${old_fstab}" "${ss_tmp}/${old_fstab}"
+      fi
+   fi
+
+   [ $home_mounted -eq 1 ] && umount /mnt/home
+   [ $root_mounted -eq 1 ] && umount /mnt
+fi
+
+
+#
+# Do the disk partitioning
+#
+if [ $do_partition -eq 1 ]; then
+   if [ $AUTO_INSTALL -ne 1 ]; then
+      dialog --yesno "                 DANGER\n\nAll data on the hard disk will be destroyed.\n\n         Do you wish to continue ?\n" 10 50 || abort
+   else
+      echo "Partitioning hard disk"
+   fi
+
+   dialog --infobox "Partitioning hard disk" 3 70
+
+   #
+   # Wipe the first meg of data off the disk. This will get rid
+   # of any crap fdisk/gpart information.
+   #
+   dd bs=1m count=1 if=/dev/zero of=/dev/${disk_dev} > /dev/null
+
+   #
+   # Also need to remove the last section of disk as a backup copy
+   # could exist there too
+   #
+   DISK_SIZE=`diskinfo /dev/${disk_dev} | awk '{ print $3 }'`
+   dd bs=1m count=1 if=/dev/zero of=/dev/${disk_dev} oseek=`echo "( $DISK_SIZE / 1024 / 1024 ) - 1" |bc -q` > /dev/null
+
+   #
+   # Create GPT scheme on ${disk_dev}
+   #
+   echo -n "gpart create: " >> ${logfile}
+   gpart create -s GPT ${disk_dev} >> ${logfile} || abort
+
+   #
+   # Need to get the reported gpt size because it is slightly smaller
+   # than what is reported by diskinfo.
+   #
+   gpt_size=`gpart show ${disk_dev} | grep GPT | awk '{ print $3 }'`
+   echo "GPT size ${gpt_size}" >> ${logfile}
+
+   #
+   # Write the master boot record
+   #
+   echo -n "gpart mbr: " >> ${logfile}
+   gpart bootcode -b /boot/pmbr ${disk_dev} >> ${logfile} || abort
+
+   #
+   # Create a dedicated freebsd-boot partition that can boot FreeBSD
+   # from a freebsd-ufs partition, and install bootstrap code into it.
+   #
+
+   echo -n "gpt boot partition: " >> ${logfile}
+   offset=40
+   gpart add -b ${offset} -s 88 -t freebsd-boot -l ${boot_label} ${disk_dev} >> ${logfile} || abort
+   offset=`expr ${offset} + 88`
+
+   echo -n "gpt bootcode: " >> ${logfile}
+   gpart bootcode -p /boot/gptboot -i 1 ${disk_dev} >> ${logfile} || abort
+
+   # / (os1) - p2
+   echo -n "gpart add / offset ${offset} size ${os_size} label ${os1_label}: " >> ${logfile}
+   gpart add -b ${offset} -s ${os_size} -t freebsd-ufs -l ${os1_label} ${disk_dev} >> ${logfile} || abort
+   offset=`expr ${offset} + ${os_size}`
+
+   # / (os2) - p3
+   echo -n "gpart add / offset ${offset} size ${os_size} label ${os2_label}: " >> ${logfile}
+   gpart add -b ${offset} -s ${os_size} -t freebsd-ufs -l ${os2_label} ${disk_dev} >> ${logfile} || abort
+   offset=`expr ${offset} + ${os_size}`
+
+   # swap - p4
+   echo -n "gpart add swap offset ${offset} size ${swap_size}: " >> ${logfile}
+   gpart add -b ${offset} -s ${swap_size} -t freebsd-swap -l ${swap_label} ${disk_dev} >> ${logfile} || abort
+   offset=`expr ${offset} + ${swap_size}`
+
+   # /home (rest) - p5
+   data_size=`expr ${gpt_size} - ${offset}`
+   echo -n "gpart add /home offset ${offset} size ${data_size}: " >> ${logfile}
+   gpart add -b ${offset} -s ${data_size} -t freebsd-ufs -l ${data_label} ${disk_dev} >> ${logfile} || abort
+
+fi
+
+os_new_index=`gpart show -l ${disk_dev} | grep -w ${os_new} | awk '{print $3}'`
+os_oth_index=`gpart show -l ${disk_dev} | grep -w ${os_oth} | awk '{print $3}'`
+
+#
+# Set / Unset bootme attributes
+#
+gpart set   -a 'bootme' -i ${os_new_index} ${disk_dev} >> ${logfile} || abort
+gpart unset -a 'bootme' -i ${os_oth_index} ${disk_dev} >> ${logfile} || abort
+
+
+#
+# Create newfs partitions
+#
+dialog --infobox "Creating / filesystem..." 3 70
+newfs "${label_dir}/${os_new}" >> ${logfile} || abort
+
+if [ $do_partition -eq 1 ]; then
+   dialog --infobox "Creating /home filesystem..." 3 70
+   newfs -U -d 16777216 -b 65536 -f 65536 -i 1048576 "${label_dir}/${data_label}" >> ${logfile} || abort
+fi
+
+
+#
+# Mount the installation disk
+#
+mount -t ufs "${label_dir}/${os_new}" /mnt
+mkdir -m 1777 /mnt/tmp
+mkdir /mnt/var
+mkdir /mnt/usr
+mkdir /mnt/home
+mkdir /mnt/dev
+mkdir /mnt/etc
+mkdir /mnt/cdrom
+mount -t ufs "${label_dir}/${data_label}" /mnt/home
+mount -t devfs devfs /mnt/dev
+
+mkdir -p /mnt/home/system/tmp
+mkdir -p /mnt/home/system/var/tmp
+
+chmod 01777 /mnt/home/system/tmp
+chmod 01777 /mnt/home/system/var/tmp
+
+
+FSTAB_HDR='# %-17s %-15s %-7s %-15s %-6s %-8s #\n'
+FSTAB_FMT='%-21s %-15s %-7s %-15s %-6s %-8s  \n'
+mnt_dir='/mnt'
+#
+# Create /etc/fstab
+#
+if [ -f "${ss_tmp}/${old_fstab}" ];
+then
+
+   #
+   # Note:
+   #
+   # If the fstab file does not contain the new labels then remove
+   # anything mounted on:
+   # /
+   # /home
+   # /swap
+   #
+   # But potentially keep other
+   #
+   cat ${ss_tmp}/${old_fstab} | \
+   awk '$2 != "Device"'     | \
+   awk '$2 != "/"     || $1 == "'"${label_dir}\/${os_new}"'"'     | \
+   awk '$2 != "/home" || $1 == "'"${label_dir}\/${data_label}"'"' | \
+   awk '$2 != "none"  || $1 == "'"${label_dir}\/${swap_label}"'"' > ${mnt_dir}/etc/fstab
+
+
+   #
+   # Order is important for / and /home if they do not exist (because we removed it above)
+   #
+   # For home, if it exists and is named correctly but located differently (ie by the user)
+   # then it should remain ok
+   #
+   (
+      printf "${FSTAB_HDR}"  Device                         Mountpoint     FStype  Options          Dump Pass
+      awk '$2 == "/"{exit 1}'        ${mnt_dir}/etc/fstab  && printf "${FSTAB_FMT}" "${label_dir}/${os_new}"       /               ufs     rw               1    1
+      awk '$2 == "/home"{exit 1}'    ${mnt_dir}/etc/fstab  && printf "${FSTAB_FMT}" "${label_dir}/${data_label}"   /home           ufs     rw               2    2
+   ) > ${mnt_dir}/etc/fstab.tmp
+
+   cat ${mnt_dir}/etc/fstab >> ${mnt_dir}/etc/fstab.tmp
+
+   #
+   # The others are replaced by putting them at the end if they don't already exist
+   #
+   (
+      awk '$2 == "none"{exit 1}'     ${mnt_dir}/etc/fstab  && printf "${FSTAB_FMT}" "${label_dir}/${swap_label}"   none            swap    sw               0    0
+      awk '$2 == "/tmp"{exit 1}'     ${mnt_dir}/etc/fstab  && printf "${FSTAB_FMT}" /home/system/tmp               /tmp            nullfs  rw,mode=01777    0    0
+      awk '$2 == "/var/tmp"{exit 1}' ${mnt_dir}/etc/fstab  && printf "${FSTAB_FMT}" /home/system/var/tmp           /var/tmp        nullfs  rw,mode=01777    0    0
+   ) >> "${mnt_dir}/etc/fstab.tmp"
+
+   mv ${mnt_dir}/etc/fstab.tmp ${mnt_dir}/etc/fstab
+
+else
+
+        #   /dev/gpt/data
+   (
+      printf "${FSTAB_HDR}"  Device                         Mountpoint     FStype  Options          Dump Pass
+      printf "${FSTAB_FMT}" "${label_dir}/${os_new}"       /               ufs     rw               1    1
+      printf "${FSTAB_FMT}" "${label_dir}/${data_label}"   /home           ufs     rw               2    2
+      printf "${FSTAB_FMT}" "${label_dir}/${swap_label}"   none            swap    sw               0    0
+      printf "${FSTAB_FMT}" /home/system/tmp               /tmp            nullfs  rw,mode=01777    0    0
+      printf "${FSTAB_FMT}" /home/system/var/tmp           /var/tmp        nullfs  rw,mode=01777    0    0
+   ) > "/mnt/etc/fstab"
+
+fi
+
+
+#
+# Install the base and kernel distributions
+#
+dialog --infobox "Installing operating system files. Please wait...." 3 70
+tar -xf /usr/freebsd-dist/base.txz -C /mnt || abort
+dialog --infobox "Installing kernel. Please wait...." 3 70
+tar -xf /usr/freebsd-dist/kernel.txz -C /mnt || abort
+
+
+#
+# Prompt user for configuration options
+#
+if [ $AUTO_INSTALL -ne 1 ]; then
+   bsdinstall time
+   bsdinstall rootpass
+fi
+
+if ! [ -f "${ss_tmp}/etc/rc.conf" ]; then
+   if [ $AUTO_INSTALL -ne 1 ]; then
+      bsdinstall hostname
+      bsdinstall netconfig
+   fi
+fi
+
+dialog --infobox "Saving system configuration..." 3 70
+
+bsdinstall config
+
+
+#
+# If the IP info wasn't configured manually
+# above, copy existing configuration
+#
+if [ -f "${ss_tmp}/etc/rc.conf" ]; then
+   for file in ${keep_conf}; do
+      [ -d "${ss_tmp}/${file}" ] && mkdir -p "/mnt/${file}"
+      [ -f "${ss_tmp}/${file}" ] && cp "${ss_tmp}/${file}" "/mnt/${file}"
+   done
+fi
+
+#
+# for auto_install, insert network configs directly into rc.conf
+#
+if [ $AUTO_INSTALL -ne 0 ]; then
+   PARTITIONS=ada0
+   DISTRIBUTIONS="kernel.txz base.txz"
+
+   #!/bin/sh
+   # insert entries to rc.conf
+   echo "hostname=\""$auto_hostname"\"" >> /mnt/etc/rc.conf
+   echo "ifconfig_"$auto_interface"=\"inet" $auto_ip_address "netmask" $auto_netmask"\"" >> /mnt/etc/rc.conf
+   echo "sshd_enable=YES" >> /mnt/etc/rc.conf
+   echo "defaultrouter=\""$auto_default_router"\"" >> /mnt/etc/rc.conf
+   # insert entires to hosts file
+   rm /mnt/etc/hosts
+   echo "::1	      localhost localhost."`echo $auto_hostname | awk '{split($0,a,"."); print a[2] "." a[3]}'` >> /mnt/etc/hosts
+   echo "127.0.0.1	localhost localhost."`echo $auto_hostname | awk '{split($0,a,"."); print a[2] "." a[3]}'` >> /mnt/etc/hosts
+   echo $auto_ip_address    $auto_hostname  `echo $auto_hostname | awk '{split($0,a,"."); print a[1]}'` >> /mnt/etc/hosts
+   echo $auto_ip_address    $auto_hostname >> /mnt/etc/hosts
+
+   #insert entries into resolv.conf
+   echo "search" $auto_domain >> /mnt/etc/resolv.conf
+   echo "nameserver" $auto_dns >> /mnt/etc/resolv.conf
+
+   # change root password
+   chroot ${mnt_dir} chpass -p $auto_password root
+
+   # enable ssh as root user
+   echo "PermitRootLogin yes" >> /mnt/etc/ssh/sshd_config
+fi
+
+#
+# for auto_install, insert time zone file as well
+#
+zoneinfo=`find /usr/share/zoneinfo -name $auto_timezone`
+cp $zoneinfo /mnt/etc/localtime
+
+
+#
+# Copy over FreeBSD distribution files
+#
+dialog --infobox "Copying FreeBSD distribution files..." 3 70
+mkdir -p /mnt/${ROOT_DIR}/freebsd-dist
+cp /usr/freebsd-dist/*.txz /mnt/${ROOT_DIR}/freebsd-dist
+
+
+#
+# Copy the CDROM package repository to Statseeker's package directory
+#
+dialog --infobox "Creating package repository..." 3 70
+cp -r /packages /mnt/${pkg_dir}
+rm /mnt/${pkg_dir}/TRANS.TBL
+
+
+#
+# Install Statseeker Packages
+#
+cat <<EOF > /mnt/tmp/ss_install.sh
+#!/bin/sh
+export PATH=/bin:/sbin:/usr/bin:/usr/sbin
+${pkg_dir}/package-upgrade.sh -d ${pkg_dir}
+exit \$?
+EOF
+
+
+#
+# Install Statseeker
+#
+chroot /mnt /bin/sh /tmp/ss_install.sh
+STATUS=$?
+
+
+#
+# Clean up and exit
+#
+rm -f  /mnt/tmp/ss_install.sh
+umount /mnt/home
+umount /mnt/dev
+umount /mnt
+exit $STATUS
