@@ -1519,11 +1519,7 @@ if [ ! -f "${ss_tmp}/etc/rc.conf" -a $USE_HA -eq 0 ]; then
    fi
 fi
 
-if [ $AUTO_INSTALL -ne 1 ]; then
-   dialog --infobox "Saving system configuration..."
-else
-   echo "Saving system configuration..."
-fi
+dialog --infobox "Saving system configuration..."
 
 #?
 bsdinstall config
