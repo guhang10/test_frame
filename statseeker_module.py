@@ -31,7 +31,7 @@ class ERROR_exception(Exception):
 class auto_iso_gen(base.statseeker_base):
     description = "this module modify the selected statseeker iso to allow config install"
 
-    def __init__(self, interface, ip, netmask, router, hostname, dns, password, mod_config, iso_orig, iso_mod):
+    def __init__(self, interface, ip, netmask, router, hostname, dns, password, timezone, mod_config, iso_orig, iso_mod):
         super(auto_iso_gen, self).__init__("auto_iso_gen", "5.x")
         self.interface = interface
         self.ip = ip
@@ -44,6 +44,7 @@ class auto_iso_gen(base.statseeker_base):
         self.iso_orig = iso_orig
         self.iso_mod = iso_mod
         self.domain = hostname.split("@")[1]
+        self.timezone = timezone
 
     def main(self):
         
@@ -98,6 +99,7 @@ class auto_iso_gen(base.statseeker_base):
                 config.write("auto_password=" + self.password + "\n")
                 config.write("auto_domain=" + self.domain + "\n")
                 config.write("auto_dns=" + self.dns + "\n")
+                config.write("auto_timezone=" + self.timezone + "\n")
             
             message.append("copying modified installerconfig file....")
             call([ "cp", self.mod_config, "disk/etc/installerconfig"], stdout=devnull, stderr=devnull)
