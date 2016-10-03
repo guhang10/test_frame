@@ -1410,8 +1410,18 @@ class vmware_add_nic(base.vmware_base):
         nic_spec = vim.vm.device.VirtualDeviceSpec()
         nic_spec.operation = vim.vm.device.VirtualDeviceSpec.Operation.add
 
+        # the nic type is defaulted to VirtualE1000
+        if "type" not in self.select:
+            nic_spec.device = vim.vm.device.VirtualE1000()
+        elif self.select["type"] == "E1000":
+            nic_spec.device = vim.vm.device.VirtualE1000()
+        elif self.select["type"] == "VMXNET3":
+            nic_spec.device = vim.vm.device.VirtualVmxnet3()
+        elif self.select["type"] == "VMXNET2":
+            nic_spec.device = vim.vm.device.VirtualVmxnet2()
+        else:
+            raise ERROR_exception("The type given for nic is not valid")
 
-        nic_spec.device = vim.vm.device.VirtualE1000()
         nic_spec.device.key = 4009
 
         nic_spec.device.deviceInfo = vim.Description()
