@@ -362,11 +362,11 @@ ha_info ()
 # Determine whether the automation installer config is present
 check_auto_install ()
 {
-	if [ -f /etc/auto_install_config ] && [ -s /etc/auto_install_config ]; then
-		return 1
-	else
-		return 0
-	fi
+   if [ -f /etc/auto_install_config ] && [ -s /etc/auto_install_config ]; then
+      return 1
+   else
+      return 0
+   fi
 }
 
 return_answer ()
