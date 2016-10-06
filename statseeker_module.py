@@ -158,12 +158,13 @@ class auto_iso_gen(base.statseeker_base):
 class licence(base.statseeker_base):
     description = "This module licence a statseeker box"
 
-    def __init__(self, ip, server_id, user, password):
-        super(licence, self).__init__("licence", "5.x")
+    def __init__(self, ip, ss_ver, server_id, user, password):
+        super(licence, self).__init__("licence", "5.x/4.x")
         self.ip = ip
         self.server_id = server_id
         self.user = user
         self.password = password
+        self.ss_ver = ss_ver
 
     def main(self):
         return_dict = {}
@@ -171,7 +172,15 @@ class licence(base.statseeker_base):
 
         ss_url = "http://" + self.ip + "/cgi/ssAdminTool-licence"
         request_method = "GET"
-        cgi_bin = "/cgi/wwwc08"
+
+        # cgi_bin version
+        if self.ss_ver == "5":
+            cgi_bin = "/cgi/wwwc08"
+        elif self.ss_ver == "4":
+            cgi_bin = "/cgi/wwwc07"
+        else:
+            raise ERROR_exception("This statseeker version is not supported")
+
         key_server = "http://key-server.statseeker.com"
 
         client = paramiko.SSHClient()
@@ -180,11 +189,13 @@ class licence(base.statseeker_base):
             client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
             client.connect(self.ip, username=self.user, password=self.password)
             (stdin, stdout, stderr) = client.exec_command("/usr/local/statseeker/ss/bin/lic-check -H")
-            hardware_id = stdout.read()
+            hardware_id = stdout.read().strip('\n')
             query_string = "server_id=" + self.server_id + "&hardware_id=" + hardware_id + "&referurl=" + ss_url
 
             message.append("Aquiring license from license server")
+            print " ".join(["wget", "-q", key_server + cgi_bin + "?" + query_string, "-O", "-"])
             LICENCE_TEXT = check_output(["wget", "-q", key_server + cgi_bin + "?" + query_string, "-O", "-"])
+            print LICENCE_TEXT
 
             for line in LICENCE_TEXT.split("\n"):
                 if "product_key" in line:
@@ -429,4 +440,148 @@ class run_api_command(base.statseeker_base):
             return_dict["message"] = message
             return_dict["meta"] = meta_dict.main()
             return json.dumps(return_dict)
+
+
+
+#
+# get_base_logd: this module get base_logd log from a statseeker box and applies filters 
+#
+class get_base_logd(base.statseeker_base):
+    description = "This module retrieves base_logd and applies apecific filter"
+
+    def __init__(self, host, user, password, filters):
+        super(get_base_logd, self).__init__("get_base_logd", "N/A")
+        self.host = host
+        self.user = user
+        self.password = password
+        self.filters = filters
+
+    def main(self):
+        return_dict = {}
+        message = []
+
+        client = paramiko.SSHClient()
+        try:
+            client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+            client.connect(self.host, username=self.user, password=self.password)
+
+            sftp = client.open_sftp()
+
+            with sftp.open("/home/statseeker/nim/etc/ping-discover-ranges.cfg", "a") as f:
+
+                for ip_range in self.ranges:
+                    f.write("include " + ip_range + "\n")
+                    message.append("include " + ip_range) 
+
+            client.close()
+
+        except(paramiko.BadHostKeyException, paramiko.AuthenticationException, 
+                paramiko.SSHException, socket.error, ERROR_exception) as e:
+
+            return_dict["success"] = "False"
+            meta_dict = meta.meta_header()
+            if hasattr(e, "msg"):
+                return_dict["error"] = e.msg
+            else:
+                return_dict["error"] = str(e)
+            return_dict["meta"] = meta_dict.main()
+            return_dict["message"] = message
+            return json.dumps(return_dict)
+
+        else:
+
+            return_dict["success"] = "True"
+            meta_dict = meta.meta_header()
+            return_dict["message"] = message
+            return_dict["meta"] = meta_dict.main()
+            return json.dumps(return_dict)
+
+
+
+#
+# ss_restore: this module verifies and runs a restore of a chosen backup
+#
+class ss_restore(base.statseeker_base):
+    description = "This module verifies and runs a restore of a chosen backup"
+    
+    def __init__(self, host, user, password, backup_host, backup_user, backup_pass, backup_dir, backup_name):
+        super(ss_restore, self).__init__("ss_restore", "N/A")
+        self.host = host
+        self.user = user
+        self.password = password
+        self.backup_host = backup_host
+        self.backup_user = backup_user
+        self.backup_pass = backup_pass
+        self.backup_dir = backup_dir
+        self.backup_name = backup_name
+
+    def main(self):
+        return_dict = {}
+        message = []
+
+        # preconfigure backup.cfg text
+        backup_cfg = ["Days=\'\'", 
+                      "FTPCycle=\'2\'",
+                      "FTPPassiveMode=\'NO\'", 
+                      "FTPPassword=\'" + self.backup_pass + "\'",
+                      "FTPPort=\'21\'",
+                      "FTPRemoteDirectory=\'" + self.backup_dir + "\'",
+                      "FTPRemoteMachineIP=\'" + self.backup_host + "\'",
+                      "FTPUserName=\'" + self.backup_user + "\'",
+                      "LOCALCycle=\'2\'",
+                      "Method=\'ftp\'",
+                      "SSHCycle=\'2\'",
+                      "StartHour=\'4\'",
+                      "StartMinute=\'0\'",
+                      "TestSize=\'10485760\'"]
+
+        client = paramiko.SSHClient()
+        try:
+            client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+            client.connect(self.host, username=self.user, password=self.password)
+
+            # populate /home/statseeker/base/etc/base.cfg
+            sftp = client.open_sftp()
+
+            with sftp.open("/home/statseeker/base/etc/backup.cfg", "w") as f:
+                f.write('\n'.join(backup_cfg))
+                message.append("backup.cfg populated")
+
+            # testing the configuration
+            (stdin, stdout, stderr) = client.exec_command("base-backup -k", get_pty=True)
+            error = stderr.read()
+            output = stdout.read()
+
+            if error or stdout.channel.recv_exit_status():
+                raise ERROR_exception(error + output)
+            else:
+                message.append(output)
+
+            # start the restore process
+
+
+            client.close()
+
+        except(paramiko.BadHostKeyException, paramiko.AuthenticationException, 
+                paramiko.SSHException, socket.error, ERROR_exception) as e:
+
+            return_dict["success"] = "False"
+            meta_dict = meta.meta_header()
+            if hasattr(e, "msg"):
+                return_dict["error"] = e.msg
+            else:
+                return_dict["error"] = str(e)
+            return_dict["meta"] = meta_dict.main()
+            return_dict["message"] = message
+            return json.dumps(return_dict)
+
+        else:
+
+            return_dict["success"] = "True"
+            meta_dict = meta.meta_header()
+            return_dict["message"] = message
+            return_dict["meta"] = meta_dict.main()
+            return json.dumps(return_dict)
+
+
 
