@@ -164,7 +164,7 @@ class licence(base.statseeker_base):
         self.server_id = server_id
         self.user = user
         self.password = password
-        self.ss_ver = ss_ver
+        self.ss_ver = ss_ver[0]
 
     def main(self):
         return_dict = {}
@@ -193,9 +193,7 @@ class licence(base.statseeker_base):
             query_string = "server_id=" + self.server_id + "&hardware_id=" + hardware_id + "&referurl=" + ss_url
 
             message.append("Aquiring license from license server")
-            print " ".join(["wget", "-q", key_server + cgi_bin + "?" + query_string, "-O", "-"])
             LICENCE_TEXT = check_output(["wget", "-q", key_server + cgi_bin + "?" + query_string, "-O", "-"])
-            print LICENCE_TEXT
 
             for line in LICENCE_TEXT.split("\n"):
                 if "product_key" in line:
