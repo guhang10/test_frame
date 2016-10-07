@@ -494,7 +494,7 @@ class get_base_logd(base.statseeker_base):
 
 
 #
-# ss_restore: this module verifies and runs a restore of a chosen backup
+# ss_restore: verifies and runs a restore of a chosen backup, reboot statseeker and then do a rewalk
 #
 class ss_restore(base.statseeker_base):
     description = "This module verifies and runs a restore of a chosen backup"
@@ -569,7 +569,6 @@ class ss_restore(base.statseeker_base):
                 message.append(output)
                 message.append("restore finished")
 
-
             # restarting statseeker
             message.append("restarting statseeker")
             (stdin, stdout, stderr) = client.exec_command(pre_command + "service statseeker.sh restart", get_pty=True)
@@ -580,18 +579,6 @@ class ss_restore(base.statseeker_base):
                 raise ERROR_exception(error + output)
             else:
                 message.append(output)
-
-            # rewalk the devices
-            message.append("rewalk devices")
-            (stdin, stdout, stderr) = client.exec_command(pre_command + "nim-dicover -r", get_pty=True)
-            error = stderr.read()
-            output = stdout.read()
-
-            if error or stdout.channel.recv_exit_status():
-                raise ERROR_exception(error + output)
-            else:
-                message.append(output)
-                message.append("rewalk finished")
 
             client.close()
 
