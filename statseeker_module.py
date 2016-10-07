@@ -43,7 +43,7 @@ class auto_iso_gen(base.statseeker_base):
         self.mod_config = mod_config
         self.iso_orig = iso_orig
         self.iso_mod = iso_mod
-        self.domain = hostname.split("@")[1]
+        self.domain = hostname.split(".")[1]
         self.timezone = timezone
 
     def main(self):
@@ -447,7 +447,7 @@ class run_api_command(base.statseeker_base):
 class get_base_logd(base.statseeker_base):
     description = "This module retrieves base_logd and applies apecific filter"
 
-    def __init__(self, host, user, password, filters):
+    def __init__(self, host, user, password, *filters):
         super(get_base_logd, self).__init__("get_base_logd", "N/A")
         self.host = host
         self.user = user
@@ -465,11 +465,8 @@ class get_base_logd(base.statseeker_base):
 
             sftp = client.open_sftp()
 
-            with sftp.open("/home/statseeker/nim/etc/ping-discover-ranges.cfg", "a") as f:
-
-                for ip_range in self.ranges:
-                    f.write("include " + ip_range + "\n")
-                    message.append("include " + ip_range) 
+            with sftp.open("/home/statseeker/base/logs/base-logd.log", "r") as f:
+                base_log = f.readlines()
 
             client.close()
 
@@ -502,11 +499,11 @@ class get_base_logd(base.statseeker_base):
 class ss_restore(base.statseeker_base):
     description = "This module verifies and runs a restore of a chosen backup"
     
-    def __init__(self, host, user, password, backup_host, backup_user, backup_pass, backup_dir, backup_name):
+    def __init__(self, host, root_pass, backup_host, backup_user, backup_pass, backup_dir, backup_name):
         super(ss_restore, self).__init__("ss_restore", "N/A")
         self.host = host
-        self.user = user
-        self.password = password
+        self.user = "root"
+        self.password = root_pass
         self.backup_host = backup_host
         self.backup_user = backup_user
         self.backup_pass = backup_pass
@@ -517,8 +514,12 @@ class ss_restore(base.statseeker_base):
         return_dict = {}
         message = []
 
+        # load the ~/.profile before running commands nop, not for statseeker
+        pre_command = ". ~/.profile;"
+            
         # preconfigure backup.cfg text
-        backup_cfg = ["Days=\'\'", 
+        backup_cfg = ["# shell 3 15 1",
+                      "Days=\'\'", 
                       "FTPCycle=\'2\'",
                       "FTPPassiveMode=\'NO\'", 
                       "FTPPassword=\'" + self.backup_pass + "\'",
@@ -542,11 +543,36 @@ class ss_restore(base.statseeker_base):
             sftp = client.open_sftp()
 
             with sftp.open("/home/statseeker/base/etc/backup.cfg", "w") as f:
-                f.write('\n'.join(backup_cfg))
+                f.write('\n'.join(backup_cfg) + '\n')
                 message.append("backup.cfg populated")
 
             # testing the configuration
-            (stdin, stdout, stderr) = client.exec_command("base-backup -k", get_pty=True)
+            (stdin, stdout, stderr) = client.exec_command(pre_command + "base-backup -k", get_pty=True)
+            error = stderr.read()
+            output = stdout.read()
+
+            if error or stdout.channel.recv_exit_status():
+                raise ERROR_exception(error + output)
+            else:
+                message.append(output)
+                message.append("backup is valid")
+
+            # starting the restore
+            message.append("starting restore")
+            (stdin, stdout, stderr) = client.exec_command(pre_command + "base-backup -r " + self.backup_name, get_pty=True)
+            error = stderr.read()
+            output = stdout.read()
+            
+            if error or stdout.channel.recv_exit_status():
+                raise ERROR_exception(error + output)
+            else:
+                message.append(output)
+                message.append("restore finished")
+
+
+            # restarting statseeker
+            message.append("restarting statseeker")
+            (stdin, stdout, stderr) = client.exec_command(pre_command + "service statseeker.sh restart", get_pty=True)
             error = stderr.read()
             output = stdout.read()
 
@@ -555,8 +581,17 @@ class ss_restore(base.statseeker_base):
             else:
                 message.append(output)
 
-            # start the restore process
+            # rewalk the devices
+            message.append("rewalk devices")
+            (stdin, stdout, stderr) = client.exec_command(pre_command + "nim-dicover -r", get_pty=True)
+            error = stderr.read()
+            output = stdout.read()
 
+            if error or stdout.channel.recv_exit_status():
+                raise ERROR_exception(error + output)
+            else:
+                message.append(output)
+                message.append("rewalk finished")
 
             client.close()
 
