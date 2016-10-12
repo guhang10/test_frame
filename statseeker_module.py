@@ -43,7 +43,8 @@ class auto_iso_gen(base.statseeker_base):
         self.mod_config = mod_config
         self.iso_orig = iso_orig
         self.iso_mod = iso_mod
-        self.domain = hostname.split(".")[1]
+        hostname = hostname.split(".")
+        self.domain = ".".join([hostname[1], hostname[2]])
         self.timezone = timezone
 
     def main(self):
