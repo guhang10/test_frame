@@ -302,7 +302,7 @@ class vmware_poweroff_vm(base.vmware_base):
         else:
             if self.json:
                 return_dict["success"] = "True"
-                meta_dict = meta.meta_header(self.host, self.user, message)
+                meta_dict = meta.meta_header(host=self.host, user=self.user)
                 return_dict["meta"] = meta_dict.main()
                 return_dict["message"] = message
                 return json.dumps(return_dict)
@@ -1741,7 +1741,7 @@ class vmware_datastore_upload(base.vmware_base):
         try:
             # File validation
             if not os.path.isfile(self.local_file):
-                raise ERROR_exception("The provided local iso doesn't exist")
+                raise ERROR_exception("The provided local file doesn't exist")
             else:
                 pass
             
@@ -1778,8 +1778,7 @@ class vmware_datastore_upload(base.vmware_base):
                         datastore = ds
 
             if not datacenter or not datastore:
-                print("Could not find the datastore specified")
-                raise SystemExit(-1)
+                raise ERROR_exception("Could not find the datastore specified")
 
             # Clean up the views now that we have what we need
             datastores_object_view.Destroy()
@@ -1852,4 +1851,102 @@ class vmware_datastore_upload(base.vmware_base):
             else:
                 return True
 
+
+#
+# vmware_create_snapshot module: create a snapshot for a vm
+#
+
+class vmware_create_snapshot(base.vmware_base):
+    description = "This module creates a snapshot of a vm"
+
+    def __init__(self, host, user, password, snap_name, snap_desc, **search):
+        super(vmware_create_snapshot, self).__init__("vmware_create_snapshot", "6.0.0")
+        self.context = ssl.SSLContext(ssl.PROTOCOL_SSLv23)
+        self.context.verify_mode = ssl.CERT_NONE
+        self.host = host
+        self.user = user
+        self.password = password
+        self.search = search
+        self.snap_name = snap_name
+        self.desc = snap_desc
+
+    def get_obj(self, content, vimtype, name):
+        """
+        Return an object by name, if name is None the
+        first found object is returned
+        """
+        obj = None
+        container = content.viewManager.CreateContainerView(
+            content.rootFolder, vimtype, True)
+        for c in container.view:
+            if name:
+                if c.name == name:
+                    obj = c
+                    break
+            else:
+                obj = c
+                break
+
+        return obj
+
+
+    def main(self):
+
+        try:
+            service_instance = connect.SmartConnect(host=self.host ,user=self.user,
+                    pwd=self.password, port=443, sslContext=self.context)
+
+            atexit.register(connect.Disconnect, service_instance)
+
+            return_dict = {}
+            message = []
+
+            if "uuid" in self.search:
+                VM = service_instance.content.searchIndex.FindByUuid(None, self.search["uuid"],
+                                                                     True, False)
+            elif "ip" in self.search:
+                VM = service_instance.content.searchIndex.FindByIp(None, self.search["ip"], True)
+
+            elif "domain_name" in self.search:
+                VM = service_instance.content.searchIndex.FindByDnsName(None, self.search["domain_name"],
+                                                                        True)
+            elif "name" in self.search:
+                content = service_instance.RetrieveContent()
+                VM = self.get_obj(content, [vim.VirtualMachine], self.search["name"])
+
+            else:
+                raise ERROR_exception("No valid search criteria given")
+
+            if VM is None:
+                raise ERROR_exception("Unable to locate VirtualMachine.")
+
+            message.append("Found: {0}".format(VM.name))
+            message.append("Creating snapshot: " + self.snap_name)
+
+            TASK = VM.CreateSnapshot_Task(name=self.snap_name,
+                                          description=self.desc,
+                                          memory=True,
+                                          quiesce=False)
+
+            tasks.wait_for_tasks(service_instance, [TASK])
+
+            message.append("{0}".format(TASK.info.state))
+
+        #   exception capture
+
+        except (ERROR_exception,vmodl.MethodFault) as e:
+
+            return_dict["success"] = "False"
+            meta_dict = meta.meta_header(host=self.host, user=self.user)
+            return_dict["error"] = e.msg
+            return_dict["meta"] = meta_dict.main()
+            return_dict["message"] = message
+            return json.dumps(return_dict)
+    
+        else:
+            return_dict["success"] = "True"
+            meta_dict = meta.meta_header(host=self.host, user=self.user)
+            return_dict["meta"] = meta_dict.main()
+            return_dict["message"] = message
+            return json.dumps(return_dict)
 
