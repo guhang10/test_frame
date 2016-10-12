@@ -710,10 +710,10 @@ if [ $AUTO_INSTALL -ne 0 ]; then
    echo "defaultrouter=\""$auto_default_router"\"" >> /mnt/etc/rc.conf
    # insert entires to hosts file
    rm /mnt/etc/hosts
-   echo "::1	      localhost localhost."`echo $auto_hostname | awk '{split($0,a,"."); print a[2] "." a[3]}'` >> /mnt/etc/hosts
-   echo "127.0.0.1	localhost localhost."`echo $auto_hostname | awk '{split($0,a,"."); print a[2] "." a[3]}'` >> /mnt/etc/hosts
+   echo "::1	       localhost localhost."`echo $auto_hostname | awk '{split($0,a,"."); print a[2] "." a[3]}'` >> /mnt/etc/hosts
+   echo "127.0.0.1	 localhost localhost."`echo $auto_hostname | awk '{split($0,a,"."); print a[2] "." a[3]}'` >> /mnt/etc/hosts
    echo $auto_ip_address    $auto_hostname  `echo $auto_hostname | awk '{split($0,a,"."); print a[1]}'` >> /mnt/etc/hosts
-   echo $auto_ip_address    $auto_hostname >> /mnt/etc/hosts
+   echo $auto_ip_address    $auto_hostname'.' >> /mnt/etc/hosts
 
    #insert entries into resolv.conf
    echo "search" $auto_domain >> /mnt/etc/resolv.conf
