@@ -72,17 +72,21 @@ class auto_iso_gen(base.statseeker_base):
                 message.append("mounting the iso image....")
                 call([ "mkdir", "/dev/mnt" ], stdout=devnull, stderr=devnull)
                 call([ "mount", self.iso_orig, "/dev/mnt" ], stdout=devnull, stderr=devnull)
+                message.append("success")
 
                 message.append("copy the mounted directory....")
                 call([ "cp", "-r", "/dev/mnt", "disk"])
+                message.append("success")
 
             elif system == "FreeBSD":
                 message.append("mounting the iso image....")
                 md = "/dev/" + check_output([ "mdconfig", "-a", "-t", "vnode", "-f", self.iso_orig]).rstrip()
-                call([ "mount", "-t", "cd9660", md, "/mnt" ], stdout=devnull, stderr=devnull)
+                call([ "mount", "-t", "cd9660", md, "/mnt" ], stdout=devnull, stderr=devnull)a
+                message.append("success")
 
                 message.append("copy the mounted directory....")
                 call([ "cp", "-r", "/mnt/", "disk/"], stdout=devnull, stderr=devnull)
+                message.append("success")
 
             else:
                 raise ERROR_exception("This module must be run on Linux or Freebsd platform")
@@ -104,27 +108,32 @@ class auto_iso_gen(base.statseeker_base):
             
             message.append("copying modified installerconfig file....")
             call([ "cp", self.mod_config, "disk/etc/installerconfig"], stdout=devnull, stderr=devnull)
+            message.append("success")
 
 
             if system == "Linux":
-                message.append("umount the iso image")
+                message.append("umounting the iso image")
                 call([ "umount", "/dev/mnt/"], stdout=devnull, stderr=devnull)
+                message.append("success")
             else:
                 message.append("umount /mnt and delete the memory disk")
                 call([ "umount", "-f", "/mnt"], stdout=devnull, stderr=devnull)
                 call([ "mdconfig", "-du", md ])
+                message.append("success")
 
-            message.append("creating iso image...")
+            message.append("creating iso image: " + self.iso_mod)
 
             if not call(["mkisofs", "-rT", "-ldots", "-b", "boot/cdboot", "-no-emul-boot", "-V", "STATSEEKER_INSTALL", "-o", self.iso_mod, "disk"], stdout=devnull, stderr=devnull):
-                message.append(self.iso_mod + " has been created successfully")
+                message.append("success")
 
-                message.append("iso created, remove copied directories")
+                message.append("remove the copied directory")
                 call(["rm", "-rf", "disk"])
+                message.append("success")
 
             else: 
                 message.append("failed to create iso, remove copied directories")
                 call(["rm", "-rf", "disk"])
+                message.append("success")
 
                 raise ERROR_exception("something when wrong during repackaging of the iso")
 
@@ -199,14 +208,18 @@ class licence(base.statseeker_base):
             for line in LICENCE_TEXT.split("\n"):
                 if "product_key" in line:
                     LICENCE = re.sub('[">]', '', line.split("value=\"")[-1])
+                    message.append("success")
 
             if not (LICENCE and LICENCE.isdigit()):
                 raise ERROR_exception("failed to aquire the license key")
             
             message.append("Adding server_id to base.cfg")
             client.exec_command("/usr/local/statseeker/ss/bin/base-cfg -s /home/statseeker/base/etc/base.cfg server_number " + self.server_id)
+            message.append("success")
+
             message.append("Adding licence")
             client.exec_command("/usr/local/statseeker/ss/bin/lic-check -i" + "\"" + LICENCE +"\"")
+            message.append("success")
 
             message.append("licence checking")
             (stdin, stdout, stderr) = client.exec_command("/usr/local/statseeker/ss/bin/lic-check")
@@ -214,7 +227,7 @@ class licence(base.statseeker_base):
             if stdout.channel.recv_exit_status():
                 raise ERROR_exception("invalid license")
             else:
-                message.append("license is valid")
+                message.append("success")
 
             client.close()
 
@@ -265,11 +278,15 @@ class add_scan_range(base.statseeker_base):
 
             sftp = client.open_sftp()
 
+            message.append("adding scan range: " + self.ranges)
+
             with sftp.open("/home/statseeker/nim/etc/ping-discover-ranges.cfg", "a") as f:
 
                 for ip_range in self.ranges:
                     f.write("include " + ip_range + "\n")
                     message.append("include " + ip_range) 
+
+            message.append("success")
 
             client.close()
 
@@ -322,9 +339,11 @@ class add_community(base.statseeker_base):
 
             with sftp.open("/home/statseeker/nim/etc/community.cfg", "a") as f:
 
+                message.append("Adding community: " + self.community)
                 for community in self.communities:
                     f.write(community + "\n")
                     message.append("added " + community) 
+                message.append("success")
 
             client.close()
 
@@ -410,6 +429,8 @@ class run_api_command(base.statseeker_base):
                     raise ERROR_exception(error + out_put)
                 else:
                     result.append(out_put)
+                    message.append("success")
+
 
             else:
                 raise ERROR_exception("Input commands are given in invalid format")
@@ -544,10 +565,12 @@ class ss_restore(base.statseeker_base):
             sftp = client.open_sftp()
 
             with sftp.open("/home/statseeker/base/etc/backup.cfg", "w") as f:
+                message.append("populating backup.cfg")
                 f.write('\n'.join(backup_cfg) + '\n')
-                message.append("backup.cfg populated")
+                message.append("success")
 
             # testing the configuration
+            message.append("verifying backup")
             (stdin, stdout, stderr) = client.exec_command(pre_command + "base-backup -k", get_pty=True)
             error = stderr.read()
             output = stdout.read()
@@ -556,7 +579,7 @@ class ss_restore(base.statseeker_base):
                 raise ERROR_exception(error + output)
             else:
                 message.append(output)
-                message.append("backup is valid")
+                message.append("success")
 
             # starting the restore
             message.append("starting restore")
@@ -568,7 +591,7 @@ class ss_restore(base.statseeker_base):
                 raise ERROR_exception(error + output)
             else:
                 message.append(output)
-                message.append("restore finished")
+                message.append("success")
 
             # restarting statseeker
             message.append("restarting statseeker")
@@ -580,6 +603,7 @@ class ss_restore(base.statseeker_base):
                 raise ERROR_exception(error + output)
             else:
                 message.append(output)
+                message.append("success")
 
             client.close()
 
@@ -605,4 +629,76 @@ class ss_restore(base.statseeker_base):
             return json.dumps(return_dict)
 
 
+#
+# ss_auto_grouping: addeing a autogrouping rule to statseeker
+# TODO: adding write api method when it's ready
+#
+
+class ss_auto_grouping(base.statseeker_base):
+    description = "This module insert existing autogrouping configs or create new autogrouping rules"
+    
+    def __init__(self, host, ss_user, ss_password, method, json_str):
+        super(ss_auto_grouping, self).__init__("ss_auto_grouping", "4.x/5.x")
+        self.ss_host = host
+        self.ss_user = ss_user
+        self.ss_password = ss_password
+        self.method = method
+        self.json_str = json_str
+        self.group_info = json.loads(json_str)
+
+    def main(self):
+        return_dict = {}
+        message = []
+
+        # load the ~/.profile before running commands nop, not for statseeker
+        pre_command = ". ~/.profile;"
+         
+
+        if self.method == "ssperl":
+            # constructing the script to go with ssperl
+            auto_group_command = "\'" + "".join(["use nim;", 
+                                                 "use AutogroupCommon;",
+                                                 "use JSON::XS;", 
+                                                 "my $name = \"" + self.group_info["name"] + "\";",
+                                                 "my $data = qq|" + self.json_str + "|;",
+                                                 "my $cfg = decode_json($data);",
+                                                 "AutogroupCommon->save_group($name, $cfg);"]) + "\'"
+
+        client = paramiko.SSHClient()
+        try:
+            client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+            client.connect(self.ss_host, username=self.ss_user, password=self.ss_password)
+
+            if self.method == "ssperl":
+                #addming the configuration
+                message.append("adding auto_grouping rule: " + self.group_info["name"])
+                (stdin, stdout, stderr) = client.exec_command(pre_command + "ssperl -e " + auto_group_command, get_pty=True)
+                error = stderr.read()
+                output = stdout.read()
+
+                if error or stdout.channel.recv_exit_status():
+                    raise ERROR_exception(error + output)
+                else:
+                    message.append("success")
+
+        except(paramiko.BadHostKeyException, paramiko.AuthenticationException, 
+                paramiko.SSHException, socket.error, ERROR_exception) as e:
+
+            return_dict["success"] = "False"
+            meta_dict = meta.meta_header()
+            if hasattr(e, "msg"):
+                return_dict["error"] = e.msg
+            else:
+                return_dict["error"] = str(e)
+            return_dict["meta"] = meta_dict.main()
+            return_dict["message"] = message
+            return json.dumps(return_dict)
+
+        else:
+
+            return_dict["success"] = "True"
+            meta_dict = meta.meta_header()
+            return_dict["message"] = message
+            return_dict["meta"] = meta_dict.main()
+            return json.dumps(return_dict)
 
