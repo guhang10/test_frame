@@ -16,6 +16,7 @@ import json
 import subprocess
 import signal
 import socket
+import traceback
 
 #
 # Custom exception

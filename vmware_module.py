@@ -12,6 +12,7 @@ import warnings
 from vm_tools import tasks
 import subprocess
 import os
+import traceback
 
 from pyVim import connect
 from pyVmomi import vmodl
