@@ -64,10 +64,10 @@ class ssh_check(base.remote_base):
 
         devnull = open(os.devnull, 'w')
         start = time.time()
-        client = paramiko.SSHClient()
         max_span = 20
 
         try:
+            client = paramiko.SSHClient()
 
             while True:
                 try:
@@ -78,8 +78,8 @@ class ssh_check(base.remote_base):
                     
                     message.append("connection established")
 
-        # close the paramiko client 
-        client.close()
+            # close the paramiko client 
+            client.close()
 
         # exception capture
         except ERROR_exception as e:
@@ -122,8 +122,8 @@ class upload_script(base.remote_base):
     def main(self):
         message = []
         return_dict = {}
-        client = paramiko.SSHClient()
         try:
+            client = paramiko.SSHClient()
             # Validate the local file
             if not os.path.isfile(self.local):
                 raise ERROR_exception("The local file is not valid")
@@ -155,8 +155,8 @@ class upload_script(base.remote_base):
                 client.exec_command("rm -rf " + self.remote) 
                 message.append("removed" + self.remote)
             
-        #close the pipe
-        client.close()
+            #close the pipe
+            client.close()
 
         # exception capture
         except ERROR_exception as e:
@@ -191,9 +191,9 @@ class upload_files(base.remote_base):
     def main(self):
         message = []
         return_dict = {}
-        client = paramiko.SSHClient()
 
         try:
+            client = paramiko.SSHClient()
             # Validate input output paring
             if len(self.local_remote["local"]) != len(self.local_remote["remote"]):
                 raise ERROR_exception("number of local files given doesn't match the remote locations")
@@ -216,8 +216,8 @@ class upload_files(base.remote_base):
 
             sftp.close()
 
-        #close the pipe
-        client.close()
+            #close the pipe
+            client.close()
 
        # exception capture
         except ERROR_exception as e:
@@ -254,8 +254,8 @@ class run_command(base.remote_base):
         message = []
         result = []
 
-        client = paramiko.SSHClient()
         try:
+            client = paramiko.SSHClient()
             # Connect to remote host
             client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
             client.connect(self.host, username=self.user, password=self.password)
@@ -293,8 +293,8 @@ class run_command(base.remote_base):
             else:
                 raise ERROR_exception("Input commands are given in invalid format")
 
-        #close the pipe
-        client.close()
+            #close the pipe
+            client.close()
 
         # exception capture
         except ERROR_exception as e:
@@ -334,10 +334,10 @@ class add_route(base.remote_base):
 
         devnull = open(os.devnull, 'w')
         start = time.time()
-        client = paramiko.SSHClient()
         max_span = 20
 
         try:
+            client = paramiko.SSHClient()
             if "route" not in self.net:
                 raise ERROR_exception("no route provided")
             else:
@@ -398,9 +398,9 @@ class add_route(base.remote_base):
 
                 message.append("writing to rc.conf")
 
-        # close the paramiko client
-        client.close()
-                
+            # close the paramiko client
+            client.close()
+                    
         # exception capture
         except ERROR_exception as e:
             return output_builder(message, e.msg, 1)

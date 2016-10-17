@@ -197,9 +197,8 @@ class licence(base.statseeker_base):
 
         key_server = "http://key-server.statseeker.com"
 
-        client = paramiko.SSHClient()
-
         try:
+            client = paramiko.SSHClient()
             client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
             client.connect(self.ip, username=self.user, password=self.password)
             (stdin, stdout, stderr) = client.exec_command("/usr/local/statseeker/ss/bin/lic-check -H")
@@ -233,8 +232,8 @@ class licence(base.statseeker_base):
             else:
                 message.append("success")
         
-        # close the paramiko client
-        client.close()
+                # close the paramiko client
+                client.close()
 
         # exception capture
         except ERROR_exception as e:
@@ -273,8 +272,8 @@ class add_scan_range(base.statseeker_base):
         return_dict = {}
         message = []
 
-        client = paramiko.SSHClient()
         try:
+            client = paramiko.SSHClient()
             client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
             client.connect(self.host, username=self.user, password=self.password)
 
@@ -290,8 +289,8 @@ class add_scan_range(base.statseeker_base):
 
             message.append("success")
         
-        # close the paramiko client
-        client.close()
+            # close the paramiko client
+            client.close()
 
         # exception capture
         except ERROR_exception as e:
@@ -329,8 +328,8 @@ class add_community(base.statseeker_base):
         return_dict = {}
         message = []
 
-        client = paramiko.SSHClient()
         try:
+            client = paramiko.SSHClient()
             client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
             client.connect(self.host, username=self.user, password=self.password)
 
@@ -344,8 +343,8 @@ class add_community(base.statseeker_base):
                     message.append("added " + community) 
                 message.append("success")
         
-        # close the paramiko client
-        client.close()
+            # close the paramiko client
+            client.close()
 
         # exception capture
         except ERROR_exception as e:
@@ -386,8 +385,8 @@ class run_api_command(base.statseeker_base):
         message = []
         result = []
 
-        client = paramiko.SSHClient()
         try:
+            client = paramiko.SSHClient()
             # Connect to remote host
             client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
             client.connect(self.host, username=self.user, password=self.password)
@@ -431,8 +430,8 @@ class run_api_command(base.statseeker_base):
             else:
                 raise ERROR_exception("Input commands are given in invalid format")
 
-        # close the paramiko client 
-        client.close()
+            # close the paramiko client 
+            client.close()
 
         # exception capture
         except ERROR_exception as e:
@@ -470,8 +469,8 @@ class get_base_logd(base.statseeker_base):
         return_dict = {}
         message = []
 
-        client = paramiko.SSHClient()
         try:
+            client = paramiko.SSHClient()
             client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
             client.connect(self.host, username=self.user, password=self.password)
 
@@ -480,8 +479,8 @@ class get_base_logd(base.statseeker_base):
             with sftp.open("/home/statseeker/base/logs/base-logd.log", "r") as f:
                 base_log = f.readlines()
         
-        # close the paramiko client
-        client.close()
+            # close the paramiko client
+            client.close()
 
         # Exception handeling
         except ERROR_exception as e:
@@ -543,8 +542,8 @@ class ss_restore(base.statseeker_base):
                       "StartMinute=\'0\'",
                       "TestSize=\'10485760\'"]
 
-        client = paramiko.SSHClient()
         try:
+            client = paramiko.SSHClient()
             client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
             client.connect(self.host, username=self.user, password=self.password)
 
@@ -591,7 +590,8 @@ class ss_restore(base.statseeker_base):
             else:
                 message.append(output)
                 message.append("success")
-
+            
+            # close the paramiko client
             client.close()
 
         # Exception handeling
@@ -664,8 +664,8 @@ class ss_auto_grouping(base.statseeker_base):
                 else:
                     message.append("success")
 
-        # Close parmiko client
-        client.close()
+            # Close parmiko client
+            client.close()
 
         # Exception handeling
         except ERROR_exception as e:
