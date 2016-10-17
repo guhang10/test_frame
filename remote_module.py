@@ -29,7 +29,7 @@ class ERROR_exception(Exception):
 #
 # output_builder
 #
-def output_builder(message, error, fail):
+def output_builder(message, error, fail, **kwargs):
     return_dict = {}
     meta_dict = meta.meta_header()
     return_dict["meta"] = meta_dict.main()
@@ -40,6 +40,9 @@ def output_builder(message, error, fail):
         return_dict["success"] = False
     else:
         return_dict["success"] = True
+
+    if "result" in kwargs:
+        return_dict["result"] = kwargs["result"]
 
     return json.dumps(return_dict)
 
@@ -67,19 +70,21 @@ class ssh_check(base.remote_base):
         max_span = 20
 
         try:
-            client = paramiko.SSHClient()
-
             while True:
                 try:
+                    client = paramiko.SSHClient()
                     client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
                     subprocess.call(["ssh-keygen", "-R", self.host], stdout=devnull, stderr=devnull)
                     client.connect(self.host, username=self.user, password=self.password, 
                                    timeout=max_span, banner_timeout=max_span)
-                    
-                    message.append("connection established")
+                    # close the parmiko client
+                    clien.close
 
-            # close the paramiko client 
-            client.close()
+                except socket.error:
+                    pass
+                else:
+                    message.append("connection established")
+                    break
 
         # exception capture
         except ERROR_exception as e:
@@ -90,8 +95,6 @@ class ssh_check(base.remote_base):
             return output_builder(message, "authentication exception", 1)
         except paramiko.SSHException:
             return output_builder(message, "ssh exception", 1)
-        except socket.error:
-            return output_builder(message, "socket error", 1)
         except Exception:
             return output_builder(message, 'generic exception: ' + traceback.format_exc(), 1)
         else:
@@ -104,10 +107,7 @@ class ssh_check(base.remote_base):
 class upload_script(base.remote_base):
     description = 'upload, run and remove a script from local to remote host'
 
-    # Supported file types dictionary, expand when necessary
-    types = {"py": "pyhon", "sh": "sh"}
-
-    def __init__(self, host, user, password, run, delete, local, remote):
+    def __init__(self, host, user, password, run, delete, local, remote, **kwargs):
         super(upload_script, self).__init__("upload_script", "n/a")
         self.remote = remote
         self.local = local
@@ -116,12 +116,12 @@ class upload_script(base.remote_base):
         self.host = host
         self.user = user
         self.password = password
-        if self.run:
-            self.interpreter = run_script.types[self.script_type]
+        self.kwargs = kwargs
 
     def main(self):
         message = []
-        return_dict = {}
+        result = []
+
         try:
             client = paramiko.SSHClient()
             # Validate the local file
@@ -141,14 +141,19 @@ class upload_script(base.remote_base):
             # Run the script remotely and collect output
             # SSHClient.exec_command() returns the type (stdin, stdout, stderr)
             if self.run:
-                (stdin, stdout, stderr) = client.exec_command(self.interpreter + " " + self.remote)
+                command = "./" + self.remote
+
+                if "option" in self.kwargs:
+                    command = command + " " + self.kwargs["option"]
+
+                (stdin, stdout, stderr) = client.exec_command(command)
                 error = stderr.read()
                 out_put = stdout.read()
 
                 if error or stdout.channel.recv_exit_status():
                     raise ERROR_exception(error)
                 else:
-                    message.append(out_put)
+                    result.append(out_put)
 
             #removing the file on the remote host
             if self.delete:
@@ -172,7 +177,7 @@ class upload_script(base.remote_base):
         except Exception:
             return output_builder(message, 'generic exception: ' + traceback.format_exc(), 1)
         else:
-            return output_builder(message,'', 0)
+            return output_builder(message,'', 0, result=result)
 
 
 #
@@ -193,7 +198,6 @@ class upload_files(base.remote_base):
         return_dict = {}
 
         try:
-            client = paramiko.SSHClient()
             # Validate input output paring
             if len(self.local_remote["local"]) != len(self.local_remote["remote"]):
                 raise ERROR_exception("number of local files given doesn't match the remote locations")
@@ -204,6 +208,7 @@ class upload_files(base.remote_base):
                     raise ERROR_exception("The local file " + file +  " is not valid")
 
             # Connect to remote host
+            client = paramiko.SSHClient()
             client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
             client.connect(self.host, username=self.user, password=self.password)
 
@@ -224,7 +229,7 @@ class upload_files(base.remote_base):
             return output_builder(message, e.msg, 1)
         except paramiko.BadHostKeyException:
             return output_builder(message, "bad host key", 1)
-        except paramiko.AuthenticationException:
+        #except paramiko.AuthenticationException:
             return output_builder(message, "authentication exception", 1)
         except paramiko.SSHException:
             return output_builder(message, "ssh exception", 1)
@@ -250,7 +255,6 @@ class run_command(base.remote_base):
         self.commands = commands
 
     def main(self):
-        return_dict = {}
         message = []
         result = []
 
@@ -310,7 +314,7 @@ class run_command(base.remote_base):
         except Exception:
             return output_builder(message, 'generic exception: ' + traceback.format_exc(), 1)
         else:
-            return output_builder(message,'', 0)
+            return output_builder(message,'', 0, result=result)
 
 
 #

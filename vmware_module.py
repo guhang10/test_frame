@@ -29,7 +29,7 @@ class ERROR_exception(Exception):
 #
 # output_builder
 #
-def output_builder(message, error, fail):
+def output_builder(message, error, fail, **kwargs):
     return_dict = {}
     meta_dict = meta.meta_header()
     return_dict["meta"] = meta_dict.main()
@@ -40,6 +40,9 @@ def output_builder(message, error, fail):
         return_dict["success"] = False
     else:
         return_dict["success"] = True
+
+    if "result" in kwargs:
+        return_dict["result"] = kwargs["result"]
 
     return json.dumps(return_dict)
 
@@ -159,7 +162,7 @@ class vmware_get_vms(base.vmware_base):
 
     def main(self):
         message = []
-        return_dict = {}
+        result = []
         try:
             service_instance = connect.SmartConnect(host=self.host ,user=self.user,
                     pwd=self.password, port=443, sslContext=self.context)
@@ -175,15 +178,13 @@ class vmware_get_vms(base.vmware_base):
 
             children = containerView.view
 
-            return_dict["result"] = []
-
             for child in children:
 
                 if not self.json:
                     self.print_vm_info(child)
 
                 else:
-                    return_dict["result"].append(self.construct_dict(child))
+                    result.append(self.construct_dict(child))
 
 
         except vmodl.MethodFault as e:
@@ -199,7 +200,7 @@ class vmware_get_vms(base.vmware_base):
       
         else:
             if self.json:
-                return output_builder(message, '', 0)
+                return output_builder(message, '', 0, result=result)
             else:
                 return True
             
@@ -243,13 +244,14 @@ class vmware_poweroff_vm(base.vmware_base):
 
     def main(self):
 
+        message = []
+        result = []
+
         try:
             service_instance = connect.SmartConnect(host=self.host ,user=self.user,
                     pwd=self.password, port=443, sslContext=self.context)
 
             atexit.register(connect.Disconnect, service_instance)
-
-            return_dict = {}
 
             if "uuid" in self.search:
                 VM = service_instance.content.searchIndex.FindByUuid(None, self.search["uuid"],
@@ -269,8 +271,6 @@ class vmware_poweroff_vm(base.vmware_base):
 
             if VM is None:
                 raise ERROR_exception("Unable to locate VirtualMachine.")
-
-            message = []
 
             message.append("Found: {0}".format(VM.name))
             message.append("The current powerState is: {0}".format(VM.runtime.powerState))
@@ -352,8 +352,8 @@ class vmware_poweron_vm(base.vmware_base):
 
             atexit.register(connect.Disconnect, service_instance)
             
-            return_dict = {}
             message = []
+            result = []
 
             if "uuid" in self.search:
                 VM = service_instance.content.searchIndex.FindByUuid(None, self.search["uuid"],
@@ -1055,8 +1055,8 @@ class vmware_create_vm(base.vmware_base):
 
     def main(self):
         
-        return_dict = {}
         message = []
+        result = []
 
         try:
             service_instance = connect.SmartConnect(host=self.host ,user=self.user,
@@ -1106,7 +1106,7 @@ class vmware_create_vm(base.vmware_base):
 
             # use some of the params as a returned result, excluding files though
             del param["files"]
-            return_dict["result"] = param
+            result = param
      
         # exception capture
         except (ERROR_exception,vmodl.MethodFault) as e:
@@ -1122,7 +1122,7 @@ class vmware_create_vm(base.vmware_base):
 
         else:
             if self.json:
-                return output_builder(message, '', 0)
+                return output_builder(message, '', 0, result=result)
             else:
                 return True
        
@@ -1542,8 +1542,7 @@ class vmware_add_cdrom(base.vmware_base):
 
  
     def main(self):
-
-        return_dict = {}
+        
         message = []
 
         try:

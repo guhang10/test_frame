@@ -27,7 +27,7 @@ class ERROR_exception(Exception):
 #
 # output_builder
 #
-def output_builder(message, error, fail):
+def output_builder(message, error, fail, **kwargs):
     return_dict = {}
     meta_dict = meta.meta_header()
     return_dict["meta"] = meta_dict.main()
@@ -38,6 +38,9 @@ def output_builder(message, error, fail):
         return_dict["success"] = False
     else:
         return_dict["success"] = True
+
+    if "result" in kwargs:
+        return_dict["result"] = kwargs["result"]
 
     return json.dumps(return_dict)
 
@@ -426,7 +429,6 @@ class run_api_command(base.statseeker_base):
                     result.append(out_put)
                     message.append("success")
 
-
             else:
                 raise ERROR_exception("Input commands are given in invalid format")
 
@@ -447,7 +449,7 @@ class run_api_command(base.statseeker_base):
         except Exception:
             return output_builder(message, 'generic exception: ' + traceback.format_exc(), 1)
         else:
-            return output_builder(message,'', 0)
+            return output_builder(message,'', 0, result=result)
 
 
 
