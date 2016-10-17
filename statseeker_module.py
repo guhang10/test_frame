@@ -81,7 +81,7 @@ class auto_iso_gen(base.statseeker_base):
             elif system == "FreeBSD":
                 message.append("mounting the iso image....")
                 md = "/dev/" + check_output([ "mdconfig", "-a", "-t", "vnode", "-f", self.iso_orig]).rstrip()
-                call([ "mount", "-t", "cd9660", md, "/mnt" ], stdout=devnull, stderr=devnull)a
+                call([ "mount", "-t", "cd9660", md, "/mnt" ], stdout=devnull, stderr=devnull)
                 message.append("success")
 
                 message.append("copy the mounted directory....")
