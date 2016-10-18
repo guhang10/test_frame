@@ -15,6 +15,8 @@ import meta
 import json
 import subprocess
 import signal
+import socket
+import traceback
 
 #
 # Custom exception
@@ -23,6 +25,27 @@ import signal
 class ERROR_exception(Exception):
         def __init__(self, msg):
             self.msg = msg
+
+#
+# output_builder
+#
+def output_builder(message, error, fail, **kwargs):
+    return_dict = {}
+    meta_dict = meta.meta_header()
+    return_dict["meta"] = meta_dict.main()
+    return_dict["message"] = message
+    
+    if fail:
+        return_dict["error"] = error
+        return_dict["success"] = False
+    else:
+        return_dict["success"] = True
+
+    if "result" in kwargs:
+        return_dict["result"] = kwargs["result"]
+
+    return json.dumps(return_dict)
+
 
 #
 # ssh_check module: repeatedly check the ssh connectivity to host until it comes up.
@@ -44,42 +67,38 @@ class ssh_check(base.remote_base):
 
         devnull = open(os.devnull, 'w')
         start = time.time()
-        client = paramiko.SSHClient()
         max_span = 20
 
         try:
-
             while True:
                 try:
+                    client = paramiko.SSHClient()
                     client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
                     subprocess.call(["ssh-keygen", "-R", self.host], stdout=devnull, stderr=devnull)
                     client.connect(self.host, username=self.user, password=self.password, 
                                    timeout=max_span, banner_timeout=max_span)
-                    client.close()
-                    
+                    # close the parmiko client
+                    clien.close
+
                 except socket.error:
                     pass
-                
                 else:
                     message.append("connection established")
                     break
-        
-        except(paramiko.BadHostKeyException, paramiko.AuthenticationException, 
-                paramiko.SSHException) as e:
-            
-            return_dict["success"] = "False"
-            meta_dict = meta.meta_header()
-            return_dict["error"] = str(e)
-            return_dict["meta"] = meta_dict.main()
-            return_dict["message"] = message
-            return json.dumps(return_dict)
 
+        # exception capture
+        except ERROR_exception as e:
+            return output_builder(message, e.msg, 1)
+        except paramiko.BadHostKeyException:
+            return output_builder(message, "bad host key", 1)
+        except paramiko.AuthenticationException:
+            return output_builder(message, "authentication exception", 1)
+        except paramiko.SSHException:
+            return output_builder(message, "ssh exception", 1)
+        except Exception:
+            return output_builder(message, 'generic exception: ' + traceback.format_exc(), 1)
         else:
-            return_dict["success"] = "True"
-            meta_dict = meta.meta_header()
-            return_dict["message"] = message
-            return_dict["meta"] = meta_dict.main()
-            return json.dumps(return_dict)
+            return output_builder(message,'', 0)
 
 
 #
@@ -88,10 +107,7 @@ class ssh_check(base.remote_base):
 class upload_script(base.remote_base):
     description = 'upload, run and remove a script from local to remote host'
 
-    # Supported file types dictionary, expand when necessary
-    types = {"py": "pyhon", "sh": "sh"}
-
-    def __init__(self, host, user, password, run, delete, local, remote):
+    def __init__(self, host, user, password, run, delete, local, remote, **kwargs):
         super(upload_script, self).__init__("upload_script", "n/a")
         self.remote = remote
         self.local = local
@@ -100,14 +116,14 @@ class upload_script(base.remote_base):
         self.host = host
         self.user = user
         self.password = password
-        if self.run:
-            self.interpreter = run_script.types[self.script_type]
+        self.kwargs = kwargs
 
     def main(self):
         message = []
-        return_dict = {}
-        client = paramiko.SSHClient()
+        result = []
+
         try:
+            client = paramiko.SSHClient()
             # Validate the local file
             if not os.path.isfile(self.local):
                 raise ERROR_exception("The local file is not valid")
@@ -125,14 +141,19 @@ class upload_script(base.remote_base):
             # Run the script remotely and collect output
             # SSHClient.exec_command() returns the type (stdin, stdout, stderr)
             if self.run:
-                (stdin, stdout, stderr) = client.exec_command(self.interpreter + " " + self.remote)
+                command = "./" + self.remote
+
+                if "option" in self.kwargs:
+                    command = command + " " + self.kwargs["option"]
+
+                (stdin, stdout, stderr) = client.exec_command(command)
                 error = stderr.read()
                 out_put = stdout.read()
 
                 if error or stdout.channel.recv_exit_status():
                     raise ERROR_exception(error)
                 else:
-                    message.append(out_put)
+                    result.append(out_put)
 
             #removing the file on the remote host
             if self.delete:
@@ -142,25 +163,21 @@ class upload_script(base.remote_base):
             #close the pipe
             client.close()
 
-        except(paramiko.BadHostKeyException, paramiko.AuthenticationException, 
-                paramiko.SSHException, IOError, ERROR_exception) as e:
-            
-            return_dict["success"] = "False"
-            meta_dict = meta.meta_header()
-            if hasattr(e, "msg"):
-                return_dict["error"] = e.msg
-            else:
-                return_dict["error"] = str(e)
-            return_dict["meta"] = meta_dict.main()
-            return_dict["message"] = message
-            return json.dumps(return_dict)
-
+        # exception capture
+        except ERROR_exception as e:
+            return output_builder(message, e.msg, 1)
+        except paramiko.BadHostKeyException:
+            return output_builder(message, "bad host key", 1)
+        except paramiko.AuthenticationException:
+            return output_builder(message, "authentication exception", 1)
+        except paramiko.SSHException:
+            return output_builder(message, "ssh exception", 1)
+        except socket.error:
+            return output_builder(message, "socket error", 1)
+        except Exception:
+            return output_builder(message, 'generic exception: ' + traceback.format_exc(), 1)
         else:
-            return_dict["success"] = "True"
-            meta_dict = meta.meta_header()
-            return_dict["message"] = message
-            return_dict["meta"] = meta_dict.main()
-            return json.dumps(return_dict)
+            return output_builder(message,'', 0, result=result)
 
 
 #
@@ -179,7 +196,6 @@ class upload_files(base.remote_base):
     def main(self):
         message = []
         return_dict = {}
-        client = paramiko.SSHClient()
 
         try:
             # Validate input output paring
@@ -192,6 +208,7 @@ class upload_files(base.remote_base):
                     raise ERROR_exception("The local file " + file +  " is not valid")
 
             # Connect to remote host
+            client = paramiko.SSHClient()
             client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
             client.connect(self.host, username=self.user, password=self.password)
 
@@ -207,25 +224,21 @@ class upload_files(base.remote_base):
             #close the pipe
             client.close()
 
-        except(paramiko.BadHostKeyException, paramiko.AuthenticationException, 
-                paramiko.SSHException, IOError, ERROR_exception) as e:
-            
-            return_dict["success"] = "False"
-            meta_dict = meta.meta_header()
-            if hasattr(e, "msg"):
-                return_dict["error"] = e.msg
-            else:
-                return_dict["error"] = str(e)
-            return_dict["meta"] = meta_dict.main()
-            return_dict["message"] = message
-            return json.dumps(return_dict)
-
+       # exception capture
+        except ERROR_exception as e:
+            return output_builder(message, e.msg, 1)
+        except paramiko.BadHostKeyException:
+            return output_builder(message, "bad host key", 1)
+        #except paramiko.AuthenticationException:
+            return output_builder(message, "authentication exception", 1)
+        except paramiko.SSHException:
+            return output_builder(message, "ssh exception", 1)
+        except socket.error:
+            return output_builder(message, "socket error", 1)
+        except Exception:
+            return output_builder(message, 'generic exception: ' + traceback.format_exc(), 1)
         else:
-            return_dict["success"] = "True"
-            meta_dict = meta.meta_header()
-            return_dict["message"] = message
-            return_dict["meta"] = meta_dict.main()
-            return json.dumps(return_dict)
+            return output_builder(message,'', 0)
 
 
 #
@@ -242,12 +255,11 @@ class run_command(base.remote_base):
         self.commands = commands
 
     def main(self):
-        return_dict = {}
         message = []
         result = []
 
-        client = paramiko.SSHClient()
         try:
+            client = paramiko.SSHClient()
             # Connect to remote host
             client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
             client.connect(self.host, username=self.user, password=self.password)
@@ -259,14 +271,14 @@ class run_command(base.remote_base):
             if isinstance(self.commands, (list,tuple)):
 
                 for command in self.commands:
-                    message.append("running " + command)
+                    message.append("running: " + command)
                     command_app = pre_command + command
                     (stdin, stdout, stderr) = client.exec_command(command_app, get_pty=True)
                     error = stderr.read()
                     out_put = stdout.read()
 
                     if error or stdout.channel.recv_exit_status():
-                        raise ERROR_exception(error + " " + out_put)
+                        raise ERROR_exception(error + out_put)
                     else:
                         result.append(out_put)
 
@@ -278,7 +290,7 @@ class run_command(base.remote_base):
                 out_put = stdout.read()
 
                 if error or stdout.channel.recv_exit_status():
-                    raise ERROR_exception(error + " " + out_put)
+                    raise ERROR_exception(error + out_put)
                 else:
                     result.append(out_put)
 
@@ -288,28 +300,21 @@ class run_command(base.remote_base):
             #close the pipe
             client.close()
 
-        except(paramiko.BadHostKeyException, paramiko.AuthenticationException, 
-                paramiko.SSHException, socket.error, ERROR_exception) as e:
-
-            return_dict["success"] = "False"
-            meta_dict = meta.meta_header()
-            if hasattr(e, "msg"):
-                return_dict["error"] = e.msg
-            else:
-                return_dict["error"] = str(e)
-            return_dict["meta"] = meta_dict.main()
-            return_dict["result"] = result
-            return_dict["message"] = message
-            return json.dumps(return_dict)
-
+        # exception capture
+        except ERROR_exception as e:
+            return output_builder(message, e.msg, 1)
+        except paramiko.BadHostKeyException:
+            return output_builder(message, "bad host key", 1)
+        except paramiko.AuthenticationException:
+            return output_builder(message, "authentication exception", 1)
+        except paramiko.SSHException:
+            return output_builder(message, "ssh exception", 1)
+        except socket.error:
+            return output_builder(message, "socket error", 1)
+        except Exception:
+            return output_builder(message, 'generic exception: ' + traceback.format_exc(), 1)
         else:
-
-            return_dict["success"] = "True"
-            meta_dict = meta.meta_header()
-            return_dict["result"] = result
-            return_dict["message"] = message
-            return_dict["meta"] = meta_dict.main()
-            return json.dumps(return_dict)
+            return output_builder(message,'', 0, result=result)
 
 
 #
@@ -333,10 +338,10 @@ class add_route(base.remote_base):
 
         devnull = open(os.devnull, 'w')
         start = time.time()
-        client = paramiko.SSHClient()
         max_span = 20
 
         try:
+            client = paramiko.SSHClient()
             if "route" not in self.net:
                 raise ERROR_exception("no route provided")
             else:
@@ -397,27 +402,23 @@ class add_route(base.remote_base):
 
                 message.append("writing to rc.conf")
 
+            # close the paramiko client
             client.close()
-                
-        
-        except(paramiko.BadHostKeyException, paramiko.AuthenticationException, 
-                paramiko.SSHException, ERROR_exception) as e:
-            
-            return_dict["success"] = "False"
-            meta_dict = meta.meta_header()
-            if hasattr(e, "msg"):
-                return_dict["error"] = e.msg
-            else:
-                return_dict["error"] = str(e)
-            return_dict["meta"] = meta_dict.main()
-            return_dict["message"] = message
-            return json.dumps(return_dict)
-
+                    
+        # exception capture
+        except ERROR_exception as e:
+            return output_builder(message, e.msg, 1)
+        except paramiko.BadHostKeyException:
+            return output_builder(message, "bad host key", 1)
+        except paramiko.AuthenticationException:
+            return output_builder(message, "authentication exception", 1)
+        except paramiko.SSHException:
+            return output_builder(message, "ssh exception", 1)
+        except socket.error:
+            return output_builder(message, "socket error", 1)
+        except Exception:
+            return output_builder(message, 'generic exception: ' + traceback.format_exc(), 1)
         else:
-            return_dict["success"] = "True"
-            meta_dict = meta.meta_header()
-            return_dict["message"] = message
-            return_dict["meta"] = meta_dict.main()
-            return json.dumps(return_dict)
+            return output_builder(message,'', 0)
 
 

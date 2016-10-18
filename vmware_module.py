@@ -12,6 +12,7 @@ import warnings
 from vm_tools import tasks
 import subprocess
 import os
+import traceback
 
 from pyVim import connect
 from pyVmomi import vmodl
@@ -24,6 +25,27 @@ from pyVmomi import vim
 class ERROR_exception(Exception):
         def __init__(self, msg):
             self.msg = msg
+
+#
+# output_builder
+#
+def output_builder(message, error, fail, **kwargs):
+    return_dict = {}
+    meta_dict = meta.meta_header()
+    return_dict["meta"] = meta_dict.main()
+    return_dict["message"] = message
+    
+    if fail:
+        return_dict["error"] = error
+        return_dict["success"] = False
+    else:
+        return_dict["success"] = True
+
+    if "result" in kwargs:
+        return_dict["result"] = kwargs["result"]
+
+    return json.dumps(return_dict)
+
 
 #
 # vmware_connect_test module
@@ -49,21 +71,13 @@ class vmware_connect_test(base.vmware_base):
             service_instance = connect.SmartConnect(host=self.host ,user=self.user,
                     pwd=self.password, port=443, sslContext=self.context)
 
-        except Exception as e:
-            print e
-            return_dict["success"] = "False"
-            meta_dict = meta.meta_header(host=self.host, user=self.user, ERROR=error.msg)
-            return_dict["message"] = message
-            return_dict["meta"] = meta_dict.main()
-            return json.dumps(return_dict)
-        
+        except ERROR_exception as e:
+            return output_builder(message, e.msg, 1)
+        except Exception:
+            return output_builder(message, 'generic exception: ' + traceback.format_exc(), 1)
         else:
-            return_dict["success"] = "True"
-            meta_dict = meta.meta_header(host=self.host, user=self.user)
-            return_dict["meta"] = meta_dict.main()
-            return_dict["message"] = message
-            return json.dumps(return_dict)
-            
+            return output_builder(message,'', 0)
+ 
 
 #
 # vmware_get_vms module
@@ -148,7 +162,7 @@ class vmware_get_vms(base.vmware_base):
 
     def main(self):
         message = []
-        return_dict = {}
+        result = []
         try:
             service_instance = connect.SmartConnect(host=self.host ,user=self.user,
                     pwd=self.password, port=443, sslContext=self.context)
@@ -164,38 +178,29 @@ class vmware_get_vms(base.vmware_base):
 
             children = containerView.view
 
-            return_dict["result"] = []
-
             for child in children:
 
                 if not self.json:
                     self.print_vm_info(child)
 
                 else:
-                    return_dict["result"].append(self.construct_dict(child))
+                    result.append(self.construct_dict(child))
 
 
         except vmodl.MethodFault as e:
             print("Caught vmodl fault : " + e.msg)
             
             if self.json:
-                return_dict["success"] = "False"
-                message = "oops"
-                meta_dict = meta.meta_header(host=self.host, user=self.user)
-                return_dict["error"] = e.msg
-                return_dict["meta"] = meta_dict.main() 
-                return_dict["message"] = message
-                return json.dumps(return_dict)
+                return output_builder(message, e.msg, 1)
             else:
                 return False
-        
+       
+        except Exception:
+            return output_builder(message, 'generic exception: ' + traceback.format_exc(), 1)
+      
         else:
             if self.json:
-                return_dict["success"] = "True"
-                meta_dict = meta.meta_header(host=self.host, user=self.user)
-                return_dict["meta"] = meta_dict.main()
-                return_dict["message"] = message
-                return json.dumps(return_dict)
+                return output_builder(message, '', 0, result=result)
             else:
                 return True
             
@@ -239,13 +244,14 @@ class vmware_poweroff_vm(base.vmware_base):
 
     def main(self):
 
+        message = []
+        result = []
+
         try:
             service_instance = connect.SmartConnect(host=self.host ,user=self.user,
                     pwd=self.password, port=443, sslContext=self.context)
 
             atexit.register(connect.Disconnect, service_instance)
-
-            return_dict = {}
 
             if "uuid" in self.search:
                 VM = service_instance.content.searchIndex.FindByUuid(None, self.search["uuid"],
@@ -266,8 +272,6 @@ class vmware_poweroff_vm(base.vmware_base):
             if VM is None:
                 raise ERROR_exception("Unable to locate VirtualMachine.")
 
-            message = []
-
             message.append("Found: {0}".format(VM.name))
             message.append("The current powerState is: {0}".format(VM.runtime.powerState))
             message.append("Attempting to power off {0}".format(VM.name))
@@ -285,27 +289,20 @@ class vmware_poweroff_vm(base.vmware_base):
                 for i in message[3:5]: print i
          
         #   exception capture
-
         except (ERROR_exception,vmodl.MethodFault) as e:
 
             if self.json:
-                return_dict["success"] = "False"
-                meta_dict = meta.meta_header(host=self.host, user=self.user)
-                return_dict["error"] = e.msg
-                return_dict["meta"] = meta_dict.main()
-                return_dict["message"] = message
-                return json.dumps(return_dict)
+                return output_builder(message, e.msg, 1)
             else:
                 print e.msg
                 return False
-        
+
+        except Exception:
+            return output_builder(message, 'generic exception: ' + traceback.format_exc(), 1)
+
         else:
             if self.json:
-                return_dict["success"] = "True"
-                meta_dict = meta.meta_header(host=self.host, user=self.user)
-                return_dict["meta"] = meta_dict.main()
-                return_dict["message"] = message
-                return json.dumps(return_dict)
+                return output_builder(message, '', 0)
             else:
                 return True
             
@@ -355,8 +352,8 @@ class vmware_poweron_vm(base.vmware_base):
 
             atexit.register(connect.Disconnect, service_instance)
             
-            return_dict = {}
             message = []
+            result = []
 
             if "uuid" in self.search:
                 VM = service_instance.content.searchIndex.FindByUuid(None, self.search["uuid"],
@@ -389,32 +386,25 @@ class vmware_poweron_vm(base.vmware_base):
 
             if not self.json:
                 for i in message[3:5]: print i
-         
-         #   exception capture
-
+       
+       # exception capture
         except (ERROR_exception,vmodl.MethodFault) as e:
 
             if self.json:
-                return_dict["success"] = "False"
-                meta_dict = meta.meta_header(host=self.host, user=self.user)
-                return_dict["error"] = e.msg
-                return_dict["meta"] = meta_dict.main()
-                return_dict["message"] = message
-                return json.dumps(return_dict)
+                return output_builder(message, e.msg, 1)
             else:
                 print e.msg
                 return False
-            
+
+        except Exception:
+            return output_builder(message, 'generic exception: ' + traceback.format_exc(), 1)
+
         else:
             if self.json:
-                return_dict["success"] = "True"
-                meta_dict = meta.meta_header(host=self.host, user=self.user)
-                return_dict["meta"] = meta_dict.main()
-                return_dict["message"] = message
-                return json.dumps(return_dict)
+                return output_builder(message, '', 0)
             else:
                 return True
-         
+        
        
 #
 # vmware_delete_vm module
@@ -511,31 +501,24 @@ class vmware_delete_vm(base.vmware_base):
             if not self.json:
                 for i in message[-2: -1]: print i
             
-          #   exception capture
-
+        #   exception capture
         except (ERROR_exception,vmodl.MethodFault) as e:
 
             if self.json:
-                return_dict["success"] = "False"
-                meta_dict = meta.meta_header(host=self.host, user=self.user)
-                return_dict["error"] = e.msg
-                return_dict["meta"] = meta_dict.main()
-                return_dict["message"] = message
-                return json.dumps(return_dict)
+                return output_builder(message, e.msg, 1)
             else:
                 print e.msg
                 return False
-            
+
+        except Exception:
+            return output_builder(message, 'generic exception: ' + traceback.format_exc(), 1)
+
         else:
             if self.json:
-                return_dict["success"] = "True"
-                meta_dict = meta.meta_header(host=self.host, user=self.user)
-                return_dict["meta"] = meta_dict.main()
-                return_dict["message"] = message
-                return json.dumps(return_dict)
+                return output_builder(message, '', 0)
             else:
                 return True
-            
+         
 
 #
 # vmware_reset_vm module: this module reset a vm (hard reset)
@@ -615,29 +598,24 @@ class vmware_reset_vm(base.vmware_base):
                 for i in message: 
                     print i
 
+        #   exception capture
         except (ERROR_exception,vmodl.MethodFault) as e:
 
             if self.json:
-                return_dict["success"] = "False"
-                meta_dict = meta.meta_header(host=self.host, user=self.user)
-                return_dict["error"] = e.msg
-                return_dict["meta"] = meta_dict.main()
-                return_dict["message"] = message
-                return json.dumps(return_dict)
+                return output_builder(message, e.msg, 1)
             else:
                 print e.msg
                 return False
-        
+
+        except Exception:
+            return output_builder(message, 'generic exception: ' + traceback.format_exc(), 1)
+
         else:
             if self.json:
-                return_dict["success"] = "True"
-                meta_dict = meta.meta_header(host=self.host, user=self.user)
-                return_dict["meta"] = meta_dict.main()
-                return_dict["message"] = message
-                return json.dumps(return_dict)
+                return output_builder(message, '', 0)
             else:
                 return True
-            
+           
 
 #
 # vmware_soft_reboot_vm module: this module send target vm a  reboot signal(no gurantee for a reboot though)
@@ -718,30 +696,25 @@ class vmware_soft_reboot_vm(base.vmware_base):
                 for i in message: 
                     print i
 
+        # exception capture
         except (ERROR_exception,vmodl.MethodFault) as e:
 
             if self.json:
-                return_dict["success"] = "False"
-                meta_dict = meta.meta_header(host=self.host, user=self.user)
-                return_dict["error"] = e.msg
-                return_dict["meta"] = meta_dict.main()
-                return_dict["message"] = message
-                return json.dumps(return_dict)
+                return output_builder(message, e.msg, 1)
             else:
                 print e.msg
                 return False
-            
+
+        except Exception:
+            return output_builder(message, 'generic exception: ' + traceback.format_exc(), 1)
+
         else:
             if self.json:
-                return_dict["success"] = "True"
-                meta_dict = meta.meta_header(host=self.host, user=self.user)
-                return_dict["meta"] = meta_dict.main()
-                return_dict["message"] = message
-                return json.dumps(return_dict)
+                return output_builder(message, '', 0)
             else:
                 return True
-            
-        
+       
+
 #
 #  wmare_list_datastore_info module: still haven't decide whether I want json output yet (definitely)
 #
@@ -866,32 +839,25 @@ class vmware_list_datastore_info(base.vmware_base):
 
                 # associate ESXi host with the datastore it sees
                 datastores[esxi_host.name] = datastore_dict
-
+       
+       # exception capture
         except (ERROR_exception,vmodl.MethodFault) as e:
 
             if self.json:
-                return_dict["success"] = "False"
-                meta_dict = meta.meta_header(host=self.host, user=self.user)
-                return_dict["error"] = e.msg
-                return_dict["meta"] = meta_dict.main()
-                return_dict["message"] = message
-                return json.dumps(return_dict)
+                return output_builder(message, e.msg, 1)
             else:
                 print e.msg
                 return False
-            
+
+        except Exception:
+            return output_builder(message, 'generic exception: ' + traceback.format_exc(), 1)
+
         else:
             if self.json:
-                return_dict["success"] = "True"
-                return_dict["result"] = datastores
-                meta_dict = meta.meta_header(host=self.host, user=self.user)
-                return_dict["meta"] = meta_dict.main()
-                return_dict["message"] = message
-                return json.dumps(return_dict)
+                return output_builder(message, '', 0)
             else:
                 return True
-
-
+       
 #
 # vmware_clone_vm: this modue is designed to clone an existing vm (how is ip address and uuid resolved? DHCP)
 # clone a vm is okay, but not permitted to power it up, duplicated ip maybe, need to modify
@@ -1049,30 +1015,24 @@ class vmware_clone_vm(base.vmware_base):
             else:
                 raise ERROR_exception("Can't find specified template")
 
+        # exception capture
         except (ERROR_exception,vmodl.MethodFault) as e:
 
             if self.json:
-                return_dict["success"] = "False"
-                meta_dict = meta.meta_header(host=self.host, user=self.user)
-                return_dict["error"] = e.msg
-                return_dict["meta"] = meta_dict.main()
-                return_dect["message"] = message
-                return json.dumps(return_dict)
+                return output_builder(message, e.msg, 1)
             else:
                 print e.msg
                 return False
-        
+
+        except Exception:
+            return output_builder(message, 'generic exception: ' + traceback.format_exc(), 1)
+
         else:
             if self.json:
-                return_dict["success"] = "True"
-                meta_dict = meta.meta_header(host=self.host, user=self.user)
-                return_dict["meta"] = meta_dict.main()
-                return_dect["message"] = message
-                return json.dumps(return_dict)
+                return output_builder(message, '', 0)
             else:
                 return True
-
-
+       
 
 #
 # vmware_create_vm: this module creates a new vm 
@@ -1095,8 +1055,8 @@ class vmware_create_vm(base.vmware_base):
 
     def main(self):
         
-        return_dict = {}
         message = []
+        result = []
 
         try:
             service_instance = connect.SmartConnect(host=self.host ,user=self.user,
@@ -1144,31 +1104,26 @@ class vmware_create_vm(base.vmware_base):
 
             # use some of the params as a returned result, excluding files though
             del param["files"]
-            return_dict["result"] = param
-        
+            result = param
+     
+        # exception capture
         except (ERROR_exception,vmodl.MethodFault) as e:
 
             if self.json:
-                return_dict["success"] = "False"
-                meta_dict = meta.meta_header(host=self.host, user=self.user)
-                return_dict["error"] = e.msg
-                return_dict["meta"] = meta_dict.main()
-                return_dict["message"] = message
-                return json.dumps(return_dict)
+                return output_builder(message, e.msg, 1)
             else:
                 print e.msg
                 return False
-        
+
+        except Exception:
+            return output_builder(message, 'generic exception: ' + traceback.format_exc(), 1)
+
         else:
             if self.json:
-                return_dict["success"] = "True"
-                meta_dict = meta.meta_header(host=self.host, user=self.user)
-                return_dict["meta"] = meta_dict.main()
-                return_dict["message"] = message
-                return json.dumps(return_dict)
+                return output_builder(message, '', 0, result=result)
             else:
                 return True
-
+       
 
 
 #
@@ -1314,26 +1269,21 @@ class vmware_add_disk(base.vmware_base):
             else:
                 raise ERROR_exception("Can't find specified vm")
 
+        # exception capture
         except (ERROR_exception,vmodl.MethodFault) as e:
 
             if self.json:
-                return_dict["success"] = "False"
-                meta_dict = meta.meta_header(host=self.host, user=self.user)
-                return_dict["error"] = e.msg
-                return_dict["meta"] = meta_dict.main()
-                return_dict["message"] = message
-                return json.dumps(return_dict)
+                return output_builder(message, e.msg, 1)
             else:
                 print e.msg
                 return False
-            
+
+        except Exception:
+            return output_builder(message, 'generic exception: ' + traceback.format_exc(), 1)
+
         else:
             if self.json:
-                return_dict["success"] = "True"
-                meta_dict = meta.meta_header(host=self.host, user=self.user)
-                return_dict["meta"] = meta_dict.main()
-                return_dict["message"] = message
-                return json.dumps(return_dict)
+                return output_builder(message, '', 0)
             else:
                 return True
 
@@ -1478,26 +1428,21 @@ class vmware_add_nic(base.vmware_base):
             else:
                 raise ERROR_exception("Can't find specified vm")
 
+        # exception capture
         except (ERROR_exception,vmodl.MethodFault) as e:
 
             if self.json:
-                return_dict["success"] = "False"
-                meta_dict = meta.meta_header(host=self.host, user=self.user)
-                return_dict["error"] = e.msg
-                return_dict["meta"] = meta_dict.main()
-                return_dict["message"] = message
-                return json.dumps(return_dict)
+                return output_builder(message, e.msg, 1)
             else:
                 print e.msg
                 return False
-           
+
+        except Exception:
+            return output_builder(message, 'generic exception: ' + traceback.format_exc(), 1)
+
         else:
             if self.json:
-                return_dict["success"] = "True"
-                meta_dict = meta.meta_header(host=self.host, user=self.user)
-                return_dict["meta"] = meta_dict.main()
-                return_dict["message"] = message
-                return json.dumps(return_dict)
+                return output_builder(message, '', 0)
             else:
                 return True
 
@@ -1595,8 +1540,7 @@ class vmware_add_cdrom(base.vmware_base):
 
  
     def main(self):
-
-        return_dict = {}
+        
         message = []
 
         try:
@@ -1687,30 +1631,23 @@ class vmware_add_cdrom(base.vmware_base):
             #    task = vm.Reconfigure(configSpec)
             #    tasks.wait_for_tasks(service_instance, [task])
 
-
+        # exception capture
         except (ERROR_exception,vmodl.MethodFault) as e:
 
             if self.json:
-                return_dict["success"] = "False"
-                meta_dict = meta.meta_header(host=self.host, user=self.user)
-                return_dict["error"] = e.msg
-                return_dict["meta"] = meta_dict.main()
-                return_dict["message"] = message
-                return json.dumps(return_dict)
+                return output_builder(message, e.msg, 1)
             else:
                 print e.msg
                 return False
-        
+
+        except Exception:
+            return output_builder(message, 'generic exception: ' + traceback.format_exc(), 1)
+
         else:
             if self.json:
-                return_dict["success"] = "True"
-                meta_dict = meta.meta_header(host=self.host, user=self.user)
-                return_dict["meta"] = meta_dict.main()
-                return_dict["message"] = message
-                return json.dumps(return_dict)
+                return output_builder(message, '', 0)
             else:
                 return True
-
 
 
 #
@@ -1735,7 +1672,7 @@ class vmware_datastore_upload(base.vmware_base):
     def main(self):
         message = []
         return_dict = {}
-
+        
         try:
             # File validation
             if not os.path.isfile(self.local_file):
@@ -1825,29 +1762,25 @@ class vmware_datastore_upload(base.vmware_base):
                                            headers=headers,
                                            cookies=cookie,
                                            verify=False)
-            
+                            
+        # exception capture
         except (ERROR_exception,vmodl.MethodFault) as e:
 
             if self.json:
-                return_dict["success"] = "False"
-                meta_dict = meta.meta_header(host=self.host, user=self.user)
-                return_dict["error"] = e.msg
-                return_dict["meta"] = meta_dict.main()
-                return_dict["message"] = message
-                return json.dumps(return_dict)
+                return output_builder(message, e.msg, 1)
             else:
                 print e.msg
                 return False
-            
+
+        except Exception:
+            return output_builder(message, 'generic exception: ' + traceback.format_exc(), 1)
+
         else:
             if self.json:
-                return_dict["success"] = "True"
-                meta_dict = meta.meta_header(host=self.host, user=self.user)
-                return_dict["meta"] = meta_dict.main()
-                return_dict["message"] = message
-                return json.dumps(return_dict)
+                return output_builder(message, '', 0)
             else:
                 return True
+
 
 
 #
@@ -1930,21 +1863,22 @@ class vmware_create_snapshot(base.vmware_base):
 
             message.append("{0}".format(TASK.info.state))
 
-        #   exception capture
-
+        # exception capture
         except (ERROR_exception,vmodl.MethodFault) as e:
 
-            return_dict["success"] = "False"
-            meta_dict = meta.meta_header(host=self.host, user=self.user)
-            return_dict["error"] = e.msg
-            return_dict["meta"] = meta_dict.main()
-            return_dict["message"] = message
-            return json.dumps(return_dict)
-    
+            if self.json:
+                return output_builder(message, e.msg, 1)
+            else:
+                print e.msg
+                return False
+
+        except Exception:
+            return output_builder(message, 'generic exception: ' + traceback.format_exc(), 1)
+
         else:
-            return_dict["success"] = "True"
-            meta_dict = meta.meta_header(host=self.host, user=self.user)
-            return_dict["meta"] = meta_dict.main()
-            return_dict["message"] = message
-            return json.dumps(return_dict)
+            if self.json:
+                return output_builder(message, '', 0)
+            else:
+                return True
+
 
