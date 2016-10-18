@@ -1106,11 +1106,12 @@ class vmware_create_vm(base.vmware_base):
 
             content = service_instance.RetrieveContent()
 
-            datacenter = content.rootFolder.childEntity[0]
-            vm_folder = datacenter.vmFolder
-            #hosts = datacenter.hostFolder.childEntity
-            #resource_pool = hosts[0].resourcePool
+            print  content.rootFolder.childEntity
 
+            datacenter = content.rootFolder.childEntity[1]
+            vm_folder = datacenter.vmFolder
+            hosts = datacenter.hostFolder.childEntity
+            resource_pool = hosts[0].resourcePool
 
             # define datastore file path
             datastore_path = '[' + self.datastore +']' + self.vm_name
@@ -1141,7 +1142,7 @@ class vmware_create_vm(base.vmware_base):
             if not self.json:
                 print message[0]
 
-            task = vm_folder.CreateVM_Task(config=config)
+            task = vm_folder.CreateVM_Task(config=config, pool=resource_pool)
             tasks.wait_for_tasks(service_instance, [task])
 
             # use some of the params as a returned result, excluding files though
