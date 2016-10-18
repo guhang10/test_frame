@@ -1105,9 +1105,6 @@ class vmware_create_vm(base.vmware_base):
             atexit.register(connect.Disconnect, service_instance)
 
             content = service_instance.RetrieveContent()
-
-            print  content.rootFolder.childEntity
-
             datacenter = content.rootFolder.childEntity[1]
             vm_folder = datacenter.vmFolder
             hosts = datacenter.hostFolder.childEntity
