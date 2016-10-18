@@ -78,7 +78,7 @@ class ssh_check(base.remote_base):
                     client.connect(self.host, username=self.user, password=self.password, 
                                    timeout=max_span, banner_timeout=max_span)
                     # close the parmiko client
-                    clien.close
+                    client.close
 
                 except socket.error:
                     pass
