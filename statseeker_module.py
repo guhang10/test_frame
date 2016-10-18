@@ -278,7 +278,7 @@ class add_scan_range(base.statseeker_base):
 
             sftp = client.open_sftp()
 
-            message.append("adding scan range: " + ", ".joinself.ranges))
+            message.append("adding scan range: " + ", ".join(self.ranges))
 
             with sftp.open("/home/statseeker/nim/etc/ping-discover-ranges.cfg", "a") as f:
 
