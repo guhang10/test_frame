@@ -605,19 +605,19 @@ class ss_restore(base.statseeker_base):
 
         # Exception handeling
         except ERROR_exception as e:
-            return output_builder(message, e.msg)
+            return output_builder(message, e.msg, 1)
         except paramiko.BadHostKeyException:
-            return output_builder(message, "bad host key")
+            return output_builder(message, "bad host key", 1)
         except paramiko.AuthenticationException:
-            return output_builder(message, "authentication exception")
+            return output_builder(message, "authentication exception", 1)
         except paramiko.SSHException:
-            return output_builder(message, "ssh exception")
+            return output_builder(message, "ssh exception", 1)
         except socket.error:
-            return output_builder(message, "socket error")
+            return output_builder(message, "socket error", 1)
         except Exception:
-            return output_builder(message, 'generic exception: ' + traceback.format_exc())
+            return output_builder(message, 'generic exception: ' + traceback.format_exc(), 1)
         else:
-            return output_builder(message,'')
+            return output_builder(message, '', 0)
 
 
 
