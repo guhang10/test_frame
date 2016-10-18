@@ -346,7 +346,7 @@ class add_community(base.statseeker_base):
 
             with sftp.open("/home/statseeker/nim/etc/community.cfg", "a") as f:
 
-                message.append("Adding community: " + ",".joint(self.communities))
+                message.append("Adding community: " + ",".join(self.communities))
                 for community in self.communities:
                     f.write(community + "\n")
                     message.append("added " + community) 
