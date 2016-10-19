@@ -558,18 +558,19 @@ class ss_restore(base.statseeker_base):
 
             # populate /home/statseeker/base/etc/base.cfg
             sftp = client.open_sftp()
+            backup_file = "/home/statseeker/base/etc/backup.cfg"
 
-            with sftp.open("/home/statseeker/base/etc/backup.cfg", "w") as f:
+            with sftp.open(backup_file, "w") as f:
                 message.append("populating backup.cfg")
                 f.write('\n'.join(backup_cfg) + '\n')
                 message.append("success")
 
             # change the owner of the config to statseeker
             message.append("Change backup.cfg's owner to statseeker")
+            (stdin, stdout, stderr) = client.exec_command(pre_command + "chown ", + "statseeker " + backup_file)
             error = stderr.read()
             output = stdout.read()
-            (stdin, stdout, stderr) = client.exec_command(pre_command + "base-backup -k", get_pty=True)
-            
+
             if error or stdout.channel.recv_exit_status():
                 raise ERROR_exception(error + output)
             else:
