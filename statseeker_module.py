@@ -564,6 +564,15 @@ class ss_restore(base.statseeker_base):
                 f.write('\n'.join(backup_cfg) + '\n')
                 message.append("success")
 
+            # change the owner of the config to statseeker
+            message.append("Change backup.cfg's owner to statseeker")
+            (stdin, stdout, stderr) = client.exec_command(pre_command + "base-backup -k", get_pty=True)
+            if error or stdout.channel.recv_exit_status():
+                raise ERROR_exception(error + output)
+            else:
+                message.append("success")
+
+
             # testing the configuration
             message.append("verifying backup")
             (stdin, stdout, stderr) = client.exec_command(pre_command + "base-backup -k", get_pty=True)
@@ -573,7 +582,6 @@ class ss_restore(base.statseeker_base):
             if error or stdout.channel.recv_exit_status():
                 raise ERROR_exception(error + output)
             else:
-                message.append(output)
                 message.append("success")
 
             # starting the restore
@@ -585,7 +593,6 @@ class ss_restore(base.statseeker_base):
             if error or stdout.channel.recv_exit_status():
                 raise ERROR_exception(error + output)
             else:
-                message.append(output)
                 message.append("success")
 
             # restarting statseeker
@@ -597,7 +604,6 @@ class ss_restore(base.statseeker_base):
             if error or stdout.channel.recv_exit_status():
                 raise ERROR_exception(error + output)
             else:
-                message.append(output)
                 message.append("success")
             
             # close the paramiko client
