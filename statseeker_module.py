@@ -567,7 +567,7 @@ class ss_restore(base.statseeker_base):
 
             # change the owner of the config to statseeker
             message.append("Change backup.cfg's owner to statseeker")
-            (stdin, stdout, stderr) = client.exec_command(pre_command + "chown ", + "statseeker " + backup_file)
+            (stdin, stdout, stderr) = client.exec_command(pre_command + "chown " + "statseeker " + backup_file)
             error = stderr.read()
             output = stdout.read()
 
