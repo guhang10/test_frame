@@ -19,7 +19,9 @@ import subprocess
 import signal
 import urllib2
 import httplib
+import hashlib
 import traceback
+from pprint import pprint
 
 #
 # Custom exception
@@ -31,7 +33,7 @@ class ERROR_exception(Exception):
 #
 # output_builder
 #
-def output_builder(message, error, fail):
+def output_builder(message, error, fail, **kwargs):
     return_dict = {}
     meta_dict = meta.meta_header()
     return_dict["meta"] = meta_dict.main()
@@ -42,6 +44,9 @@ def output_builder(message, error, fail):
         return_dict["success"] = False
     else:
         return_dict["success"] = True
+
+    if "result" in kwargs:
+        return_dict["result"] = kwargs["result"]
 
     return json.dumps(return_dict)
 
@@ -71,7 +76,7 @@ class ping_test(base.local_base):
             else:
                 raise ERROR_exception("ping response is not received within the time limit")
 
-        except ERROR_exception as e:
+        except error_exception as e:
             return output_builder(message, e.msg, 1)
         except Exception:
             return output_builder(message, 'generic exception: ' + traceback.format_exc(), 1)
@@ -86,29 +91,64 @@ class ping_test(base.local_base):
 class file_download(base.local_base):
     description = 'retrieve a single file using url'
 
-    def __init__(self, url, file_name):
+    def __init__(self, url, **kwargs):
         super(file_download, self).__init__("file_download", "n/a")
         self.url = url
-        self.file_name = file_name
+
+        # define the save file name, with default
+        if "file_name" in kwargs:
+            self.file_name = kwargs["file_name"]
+        else:
+            self.file_name = url.split("/")[-1]
+
+        # md5
+        if "md5" in kwargs:
+            self.md5 = kwargs["md5"]
+            self.checksum = True
+        else:
+            self.checksum = False
+
 
     def main(self):
         message = []
+        result = []
         return_dict = {}
         
         try:
             # retrieving file from url
             message.append("attempting to retrieve from " + self.url)
-            file_handle = urllib2.Request(self.url)
+            hdr = {'User-Agent':'Mozilla/5.0'}
+            req = urllib2.Request(self.url, headers=hdr)
+            file_handle = urllib2.urlopen(req)
 
             message.append("success")
 
             # Open local file for writing
-            message.append("saving to: " + file_name)
-            with open (file_name, "wb") as local_file:
+            message.append("saving to: " + self.file_name)
+            with open (self.file_name, "wb") as local_file:
                 local_file.write(file_handle.read())
             message.append("success")
 
+            # md5 checking if specified (memory efficient, load file in chunks, in case of large file)
+            if self.checksum:
+                message.append("generating md5")
+                hash_md5 = hashlib.md5()
+                with open(self.file_name, "rb") as f:
+                    for chunk in iter(lambda: f.read(4096), b""):
+                        hash_md5.update(chunk)
+                message.append("success")
+                result.append(hash_md5.hexdigest())
+                
+                # checking against the input md5sum
+                message.append("checking md5")
+                if hash_md5.hexdigest() == self.md5:
+                    message.append("success")
+                else:
+                    raise ERROR_exception("md5 mismatch")
+
         # Error handeling
+        except ERROR_exception as e:
+            return output_builder(message, e.msg, 1)
         except urllib2.HTTPError, e:
             return output_builder(message, 'HTTPError = ' + str(e.code), 1)
         except urllib2.URLError, e:
@@ -118,7 +158,7 @@ class file_download(base.local_base):
         except Exception:
             return output_builder(message, 'generic exception: ' + traceback.format_exc(), 1)
         else:
-            return output_builder(message, '', 0)
+            return output_builder(message, '', 0, result=result)
 
 
 
