@@ -242,8 +242,8 @@ class licence(base.statseeker_base):
             else:
                 message.append("success")
         
-                # close the paramiko client
-                client.close()
+            # close the paramiko client
+            client.close()
 
         # exception capture
         except ERROR_exception as e:
