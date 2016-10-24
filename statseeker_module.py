@@ -15,6 +15,7 @@ import random
 import string
 import re
 import traceback
+from pprint import pprint
 
 
 #
@@ -390,6 +391,9 @@ class run_api_command(base.statseeker_base):
         self.password = password
         self.commands = commands
 
+    def shell_escape(self, arg):
+        return "%s" % (arg.replace(r"'", r"\'"), )
+
     def main(self):
         return_dict = {}
         message = []
@@ -401,17 +405,15 @@ class run_api_command(base.statseeker_base):
             client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
             client.connect(self.host, username=self.user, password=self.password)
 
-            # load the ~/.profile before running commands nop, not for statseeker
-            pre_command = ". ~/.profile;"
-            
             # execute the given list of commands
             if isinstance(self.commands, (list,tuple)):
 
                 for item in self.commands:
-                    command = "nim-api " + "\'" + json.dumps(item) + "\'"
-                    message.append("running: " + command)
-                    command_app = pre_command + command
-                    (stdin, stdout, stderr) = client.exec_command(command_app, get_pty=True)
+                    command = json.dumps(item) 
+                    message.append("running " + command)
+                    (stdin, stdout, stderr) = client.exec_command("/usr/local/statseeker/ss/bin/nim-api")
+                    stdin.write(command + "\nquit\n")
+                    stdin.flush()
                     error = stderr.read()
                     out_put = stdout.read()
                     success = json.loads(out_put)["success"]
@@ -420,12 +422,14 @@ class run_api_command(base.statseeker_base):
                         raise ERROR_exception(error + out_put)
                     else:
                         result.append(out_put)
+                        message.append("success")
 
             elif isinstance(self.commands, dict):
-                command = "nim-api " + "\'" + json.dumps(self.commands) + "\'"
+                command = json.dumps(self.commands) 
                 message.append("running " + command)
-                command_app = pre_command + command
-                (stdin, stdout, stderr) = client.exec_command(command_app, get_pty=True)
+                (stdin, stdout, stderr) = client.exec_command("/usr/local/statseeker/ss/bin/nim-api")
+                stdin.write(command + "\nquit\n")
+                stdin.flush()
                 error = stderr.read()
                 out_put = stdout.read()
                 success = json.loads(out_put)["success"]
