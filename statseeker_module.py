@@ -424,6 +424,9 @@ class run_api_command(base.statseeker_base):
                         result.append(out_put)
                         message.append("success")
 
+                    # close the client
+                    client.close()
+
             elif isinstance(self.commands, dict):
                 command = json.dumps(self.commands) 
                 message.append("running " + command)
@@ -440,11 +443,11 @@ class run_api_command(base.statseeker_base):
                     result.append(out_put)
                     message.append("success")
 
+                # close the client
+                client.close()
+
             else:
                 raise ERROR_exception("Input commands are given in invalid format")
-
-            # close the paramiko client 
-            client.close()
 
         # exception capture
         except ERROR_exception as e:
