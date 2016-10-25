@@ -16,6 +16,7 @@ import string
 import re
 import traceback
 from pprint import pprint
+import urllib2
 
 
 #
@@ -659,7 +660,6 @@ class ss_auto_grouping(base.statseeker_base):
         self.group_info = json.loads(json_str)
 
     def main(self):
-        return_dict = {}
         message = []
 
         # load the ~/.profile before running commands nop, not for statseeker
@@ -692,6 +692,109 @@ class ss_auto_grouping(base.statseeker_base):
                     raise ERROR_exception(error + output)
                 else:
                     message.append("success")
+
+            # Close parmiko client
+            client.close()
+
+        # Exception handeling
+        except ERROR_exception as e:
+            return output_builder(message, e.msg, 1)
+        except paramiko.BadHostKeyException:
+            return output_builder(message, "bad host key", 1)
+        except paramiko.AuthenticationException:
+            return output_builder(message, "authentication exception", 1)
+        except paramiko.SSHException:
+            return output_builder(message, "ssh exception", 1)
+        except socket.error:
+            return output_builder(message, "socket error", 1)
+        except Exception:
+            return output_builder(message, 'generic exception: ' + traceback.format_exc(), 1)
+        else:
+            return output_builder(message,'', 0)
+
+
+#
+# ss_cr_import: importing a custom reporting configuration to a statseeker server
+#
+
+class ss_cr_import(base.statseeker_base):
+    description = "This module imports a custom reporting configuration to a statseeker server"
+    
+    def __init__(self, host, ss_user, ss_password, tmp_config, report_name):
+        super(ss_cr_import, self).__init__("ss_cr_import", "4.x/5.x")
+        self.ss_host = host
+        self.ss_user = ss_user
+        self.ss_password = ss_password
+        self.tmp_config = tmp_config
+        self.report_name = report_name
+    
+    def rm_emp_line(self, string):
+        return filter(lambda x: not re.match(r'^\s*$', x), string)
+
+
+    def main(self):
+        message = []
+        
+        # verify the template is valid
+        if not os.path.isfile(self.tmp_config):
+            raise ERROR_exception("the template configuration is not file")
+        else:
+            try:
+                with open(self.tmp_config) as f:
+                    data_dict = json.load(f)
+            except ValueError as e:
+                raise ERROR_exception("the template config is not valid json")
+
+        data_encode = urllib2.quote(json.dumps(data_dict))
+        client = paramiko.SSHClient()
+        
+        # load the ~/.profile before running commands nop, not for statseeker
+        pre_command = ". ~/.profile;"
+
+        try:
+            client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+            client.connect(self.ss_host, username=self.ss_user, password=self.ss_password)
+            
+            # run first cgi query to add config
+            cgi_config = "REMOTE_USER='admin' QUERY_STRING='' REQUEST_METHOD='' /usr/local/statseeker/ss/cgi/crtool 'mode=save&name=" + self.report_name + "&data=" + data_encode + "'"
+            message.append("adding the custom report configuration")
+            (stdin, stdout, stderr) = client.exec_command(pre_command + cgi_config, get_pty=True)
+            error = stderr.read()
+            output = json.loads(stdout.read().split('\n')[-1])["msgs"][0]
+
+            if error or stdout.channel.recv_exit_status():
+                raise ERROR_exception(error + output)
+            elif output["state"] == "success":
+                message.append("success")
+            else:
+                raise ERROR_exception(output["msg"])
+
+            # get report id
+            get_id = "base-ega get report info \'\"C00:Custom Reports: " + self.report_name + "\"\' | cut -f2 -d \\'"
+            message.append("geting the report id using base ega")
+            (stdin, stdout, stderr) = client.exec_command(pre_command + get_id, get_pty=True)
+            error = stderr.read()
+            output = stdout.read()
+
+            if error or stdout.channel.recv_exit_status():
+                raise ERROR_exception(error + output)
+            else:
+                message.append("success")
+                report_id = self.rm_emp_line(output)
+            
+            # get append to report list
+            list_append = "REMOTE_USER='admin' REQUEST_METHOD='' /usr/local/statseeker/ss/cgi/crtool 'mode=modify-list&user=admin&cmd=add&id=" + report_id + "&name=" + self.report_name + "&parent=#&type=report'"
+            message.append("adding to report list")
+            (stdin, stdout, stderr) = client.exec_command(pre_command + list_append, get_pty=True)
+            error = stderr.read()
+            output = json.loads(stdout.read().split('\n')[-1])["msgs"][0]
+
+            if error or stdout.channel.recv_exit_status():
+                raise ERROR_exception(error + output)
+            elif output["state"] == "success":
+                message.append("success")
+            else:
+                raise ERROR_exception(output["msg"])
 
             # Close parmiko client
             client.close()
