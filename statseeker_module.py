@@ -394,6 +394,9 @@ class run_api_command(base.statseeker_base):
     def shell_escape(self, arg):
         return "%s" % (arg.replace(r"'", r"\'"), )
 
+    def rm_emp_line(self, string):
+        return filter(lambda x: not re.match(r'^\s*$', x), string)
+
     def main(self):
         return_dict = {}
         message = []
@@ -421,7 +424,7 @@ class run_api_command(base.statseeker_base):
                     if error or stdout.channel.recv_exit_status() or not success:
                         raise ERROR_exception(error + out_put)
                     else:
-                        result.append(out_put)
+                        result.append(json.loads(self.rm_emp_line(out_put)))
                         message.append("success")
 
                     # close the client
@@ -440,7 +443,7 @@ class run_api_command(base.statseeker_base):
                 if error or stdout.channel.recv_exit_status() or not success:
                     raise ERROR_exception(error + out_put)
                 else:
-                    result.append(out_put)
+                    result.append(json.loads(self.rm_emp_line(out_put)))
                     message.append("success")
 
                 # close the client
