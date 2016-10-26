@@ -444,11 +444,12 @@ class run_api_command(base.statseeker_base):
                     result.append(json.loads(self.rm_emp_line(out_put)))
                     message.append("success")
 
+            else:
+                raise ERROR_exception("Input commands are given in invalid format")
+            
             # close the client
             client.close()
 
-            else:
-                raise ERROR_exception("Input commands are given in invalid format")
 
         # exception capture
         except ERROR_exception as e:
