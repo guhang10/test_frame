@@ -428,9 +428,6 @@ class run_api_command(base.statseeker_base):
                         result.append(json.loads(self.rm_emp_line(out_put)))
                         message.append("success")
 
-                    # close the client
-                    client.close()
-
             elif isinstance(self.commands, dict):
                 command = json.dumps(self.commands) 
                 message.append("running " + command)
@@ -447,8 +444,8 @@ class run_api_command(base.statseeker_base):
                     result.append(json.loads(self.rm_emp_line(out_put)))
                     message.append("success")
 
-                # close the client
-                client.close()
+            # close the client
+            client.close()
 
             else:
                 raise ERROR_exception("Input commands are given in invalid format")
@@ -795,6 +792,145 @@ class ss_cr_import(base.statseeker_base):
                 message.append("success")
             else:
                 raise ERROR_exception(output["msg"])
+
+            # Close parmiko client
+            client.close()
+
+        # Exception handeling
+        except ERROR_exception as e:
+            return output_builder(message, e.msg, 1)
+        except paramiko.BadHostKeyException:
+            return output_builder(message, "bad host key", 1)
+        except paramiko.AuthenticationException:
+            return output_builder(message, "authentication exception", 1)
+        except paramiko.SSHException:
+            return output_builder(message, "ssh exception", 1)
+        except socket.error:
+            return output_builder(message, "socket error", 1)
+        except Exception:
+            return output_builder(message, 'generic exception: ' + traceback.format_exc(), 1)
+        else:
+            return output_builder(message,'', 0)
+
+
+#
+# ss_report_import: importing a custom reporting configuration to a statseeker server
+#
+
+class ss_report_import(base.statseeker_base):
+    description = "This module imports a custom reporting configuration to a statseeker server"
+    
+    def __init__(self, host, ss_user, ss_password, config_dir):
+        super(ss_report_import, self).__init__("ss_report_import", "4.x/5.x")
+        self.ss_host = host
+        self.ss_user = ss_user
+        self.ss_password = ss_password
+        self.config_dir = config_dir
+    
+    def rm_emp_line(self, string):
+        return filter(lambda x: not re.match(r'^\s*$', x), string)
+
+    def file_check(self, config):
+        if not os.path.isfile(config):
+            return False
+        else:
+            try:
+                with open(config) as f:
+                    data_dict = json.load(f)
+            except ValueError as e:
+                return False
+            else:
+                return True
+
+    def main(self):
+        message = []
+        warn = []
+
+        try:
+            # verify the template is valid
+            if not os.path.isdir(self.config_dir):
+                raise ERROR_exception("given directory is not valid")
+            elif not os.path.isfile(self.config_dir + "custom-report-list-admin.cfg"):
+                raise ERROR_exception("no admin list found")
+
+            # load the ~/.profile before running commands nop, not for statseeker
+            pre_command = ". ~/.profile;"
+
+            client = paramiko.SSHClient()
+            client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+            client.connect(self.ss_host, username=self.ss_user, password=self.ss_password)
+           
+            # read in old id/name pair
+            name_id_dict = {}
+           
+            # constructing the name old/new id look up dict
+            message.append("constructing the name old/new id look up dict")
+            with open(self.config_dir + "custom-report-list-admin.cfg", "r") as f:
+                admin_config_dict = json.load(f)
+            
+            for report_entry in admin_config_dict["nodes"]:
+                if report_entry["id"].isdigit():
+                    name_id_dict[report_entry["text"]] = {}
+                    name_id_dict[report_entry["text"]]["old_id"] = report_entry["id"]
+            
+                    # base-ega add report 
+                    ega_add = "base-ega add report \'\"C00:Custom Reports: " + report_entry["text"]+ "\"\' | cut -f2 -d \\'"
+                    (stdin, stdout, stderr) = client.exec_command(pre_command + ega_add, get_pty=True)
+                    error = stderr.read()
+                    output = stdout.read()
+
+                    if error or stdout.channel.recv_exit_status():
+                        raise ERROR_exception(error + output)
+                    else:
+                        name_id_dict[report_entry["text"]]["new_id"] = self.rm_emp_line(output)
+
+                else:
+                    warn.append(report_entry["text"] + " is ignored")
+            message.append("success") 
+
+            # update ids in the existing config
+            for config_file in os.listdir(self.config_dir):
+
+                # updating report configs
+                if re.search("nim-custom-report", config_file):
+
+                    with open(self.config_dir + config_file, 'r') as f:
+                        report_config_dict = json.load(f)
+                    
+                    # replace the report id
+                    report_name = report_config_dict["name"]
+                    report_config_dict["id"] = name_id_dict[report_name]["new_id"]
+
+                    file_name = "nim-custom-report-" + name_id_dict[report_name]["new_id"]
+
+                    # write the report cfg to new file
+                    sftp = client.open_sftp()
+                    ss_report_config = "/home/statseeker/nim/etc/customreports/" + file_name
+
+                    with sftp.open(ss_report_config, "w") as f:
+                        f.write(json.dumps(report_config_dict))
+
+                # updating report list
+                elif re.search("custom-report-list", config_file):
+                    file_name = config_file
+                    
+                    with open(self.config_dir + config_file, 'r') as f:
+                        report_list_dict = json.load(f)
+                    
+                    for report_entry in admin_config_dict["nodes"]:
+                        
+                        if report_entry["id"].isdigit() and report_entry["text"] in name_id_dict:
+                                report_entry["id"] = name_id_dict[report_entry["text"]]["new_id"]
+                        else:
+                            # filter out invalid entries
+                            del report_entry
+
+                    # write the report list to new file
+                    sftp = client.open_sftp()
+                    ss_list_config = "/home/statseeker/nim/etc/customreports/" + file_name
+
+                    with sftp.open(ss_list_config, "w") as f:
+                        f.write(json.dumps(report_list_dict))
 
             # Close parmiko client
             client.close()
